@@ -1,0 +1,60 @@
+version: '3.8'
+
+services:
+  # 1. Base de Datos Relacional PostgreSQL (Simulación local de Supabase/Neon)
+  db:
+    image: postgres:16-alpine
+    container_name: unibooks_db
+    restart: always
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: unibooks_secure_password
+      POSTGRES_DB: unibooks_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./database/unibooks_schema.sql:/docker-entrypoint-initdb.d/01_schema.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d unibooks_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # 2. Backend API REST con FastAPI
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: unibooks_backend
+    restart: always
+    ports:
+      - "8000:8000"
+    environment:
+      ENVIRONMENT: production
+      PROJECT_NAME: "Unibooks API - Universidad de Cundinamarca"
+      DATABASE_URL: postgresql://postgres:unibooks_secure_password@db:5432/unibooks_db
+      FIREBASE_DEV_MODE: "True"
+      INSTITUTIONAL_EMAIL_DOMAIN: "ucundinamarca.edu.co"
+      BACKEND_CORS_ORIGINS: '["http://localhost:3000","http://localhost:8080","http://localhost:8501","*"]'
+    depends_on:
+      db:
+        condition: service_healthy
+
+  # 3. Módulo de Analítica y Dashboard con Streamlit
+  analytics:
+    build:
+      context: ./analytics
+      dockerfile: Dockerfile
+    container_name: unibooks_analytics
+    restart: always
+    ports:
+      - "8501:8501"
+    environment:
+      PORT: 8501
+    depends_on:
+      - backend
+
+volumes:
+  pgdata:
+    driver: local

@@ -1,0 +1,48 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // Función auxiliar para verificar si el usuario está autenticado y tiene correo institucional UDEC
+    function isAuthenticated() {
+      return request.auth != null && 
+             request.auth.token.email.matches('.*@ucundinamarca\\.edu\\.co$');
+    }
+
+    // Función auxiliar para verificar si el usuario es participante del chat
+    function isParticipant(chatData) {
+      return isAuthenticated() && 
+             request.auth.uid in chatData.participantes;
+    }
+
+    // Reglas para la colección principal de Chats
+    match /chats/{chatId} {
+      // Permitir lectura si el usuario autenticado es uno de los participantes
+      allow read: if isAuthenticated() && (request.auth.uid in resource.data.participantes);
+      
+      // Permitir creación si el usuario se incluye a sí mismo en los participantes
+      allow create: if isAuthenticated() && (request.auth.uid in request.resource.data.participantes);
+      
+      // Permitir actualización solo a los participantes (ej. actualizar último mensaje)
+      allow update: if isParticipant(resource.data);
+
+      // Subcolección de Mensajes dentro de cada Chat
+      match /messages/{messageId} {
+        // Permitir lectura si el usuario es participante del chat padre
+        allow read: if isParticipant(get(/databases/$(database)/documents/chats/$(chatId)).data);
+        
+        // Permitir envío de mensajes si es participante y el remitente coincide con el auth.uid
+        allow create: if isParticipant(get(/databases/$(database)/documents/chats/$(chatId)).data) &&
+                         request.resource.data.remitenteUid == request.auth.uid;
+                         
+        // Los mensajes son inmutables por trazabilidad académica y auditoría
+        allow update, delete: if false;
+      }
+    }
+
+    // Colección de presencia / estado online de usuarios
+    match /users_presence/{userId} {
+      allow read: if isAuthenticated();
+      allow write: if isAuthenticated() && request.auth.uid == userId;
+    }
+  }
+}

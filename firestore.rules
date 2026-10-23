@@ -1,0 +1,81 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    
+    function isAdmin() {
+      return request.auth != null && 
+        (request.auth.token.email == 'vargasdeiby54@gmail.com' || request.auth.email == 'vargasdeiby54@gmail.com');
+    }
+
+    // Colección de Usuarios
+    match /usuarios/{userId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated() && request.auth.uid == userId;
+      allow update, delete: if isAuthenticated() && (request.auth.uid == userId || isAdmin());
+    }
+
+    // Catálogo de Libros y Publicaciones
+    match /libros/{libroId} {
+      allow read: if true;
+      allow create: if isAuthenticated();
+      allow update, delete: if isAuthenticated() && (resource.data.usuario_id == request.auth.uid || isAdmin());
+    }
+
+    match /publicaciones/{pubId} {
+      allow read: if true;
+      allow create: if isAuthenticated();
+      allow update, delete: if isAuthenticated() && (resource.data.usuario_id == request.auth.uid || isAdmin());
+    }
+
+    // Solicitudes de Intercambio
+    match /solicitudes_intercambio/{tradeId} {
+      allow read, write: if isAuthenticated();
+    }
+
+    // Transacciones y Reservas
+    match /transacciones/{txId} {
+      allow read, write: if isAuthenticated();
+    }
+
+    // Calificaciones y Reputación
+    match /calificaciones/{calId} {
+      allow read: if true;
+      allow create, write: if isAuthenticated();
+    }
+
+    // Chats y Mensajería en Tiempo Real
+    match /chats/{chatId} {
+      allow read, write: if isAuthenticated();
+
+      match /mensajes/{mensajeId} {
+        allow read, write: if isAuthenticated();
+      }
+    }
+
+    // Sedes, Facultades y Puntos Seguros de Encuentro (Lectura abierta, escritura autenticada)
+    match /sedes/{sedeId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    match /facultades/{facId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    match /puntos_encuentro/{puntoId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    // Regla de respaldo para colecciones operativas
+    match /{document=**} {
+      allow read: if true;
+      allow write: if isAuthenticated();
+    }
+  }
+}

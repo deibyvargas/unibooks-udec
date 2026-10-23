@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "545500598323",
+    "project_id": "unibooks-udec",
+    "storage_bucket": "unibooks-udec.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:545500598323:android:7b8781c2d8a2c9aa01d346",
+        "android_client_info": {
+          "package_name": "co.edu.ucundinamarca.unibooks_app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyD9c-IrZiGf6oHkRJR4aIyRLAdFtp2eAFo"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

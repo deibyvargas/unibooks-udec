@@ -1,0 +1,35 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    
+    // Verificación de autenticación institucional UDEC
+    function isAuthenticated() {
+      return request.auth != null &&
+             request.auth.token.email.matches('.*@ucundinamarca\\.edu\\.co$');
+    }
+
+    // Validación de formato y tamaño de imagen (máximo 5MB por imagen)
+    function isValidImage() {
+      return request.resource.contentType.matches('image/.*') &&
+             request.resource.size < 5 * 1024 * 1024;
+    }
+
+    // 1. Fotos de Perfil (Avatares)
+    match /avatars/{userId}/{allPaths=**} {
+      allow read: if isAuthenticated();
+      allow write: if isAuthenticated() && request.auth.uid == userId && isValidImage();
+    }
+
+    // 2. Fotos de Publicaciones de Libros (Galería de 1 a 4 fotos)
+    match /publications/{publicationId}/{allPaths=**} {
+      allow read: if true; // Lectura pública para catálogo
+      allow write: if isAuthenticated() && isValidImage();
+    }
+
+    // 3. Fotos enviadas a través del Chat en Tiempo Real
+    match /chats/{chatId}/{allPaths=**} {
+      allow read: if isAuthenticated();
+      allow write: if isAuthenticated() && isValidImage();
+    }
+  }
+}

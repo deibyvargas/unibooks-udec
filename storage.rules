@@ -1,0 +1,28 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    
+    // Fotos de libros y evidencias
+    match /libros/{libroId}/{allPaths=**} {
+      allow read: if true;
+      allow write: if request.auth != null;
+    }
+
+    // Fotos de perfil de usuario
+    match /usuarios/{userId}/{allPaths=**} {
+      allow read: if true;
+      allow write: if request.auth != null;
+    }
+
+    // Fotos de chat
+    match /chats/{chatId}/{allPaths=**} {
+      allow read, write: if request.auth != null;
+    }
+
+    // Regla de respaldo
+    match /{allPaths=**} {
+      allow read: if true;
+      allow write: if request.auth != null;
+    }
+  }
+}

@@ -1,0 +1,40 @@
+# ==============================================================================
+# MANIFIESTO INFRAESTRUCTURA COMO CÓDIGO (IaC) - RENDER.COM
+# Proyecto: Unibooks UDEC
+# ==============================================================================
+
+services:
+  # 1. API REST Backend con FastAPI
+  - type: web
+    name: unibooks-backend-api
+    runtime: docker
+    dockerContext: ./backend
+    dockerfilePath: ./backend/Dockerfile
+    plan: free
+    region: oregon
+    healthCheckPath: /health
+    envVars:
+      - key: ENVIRONMENT
+        value: production
+      - key: PROJECT_NAME
+        value: "Unibooks API - Universidad de Cundinamarca"
+      - key: DATABASE_URL
+        sync: false # Configurar con la URL de conexión de Supabase / Neon
+      - key: FIREBASE_DEV_MODE
+        value: "True"
+      - key: INSTITUTIONAL_EMAIL_DOMAIN
+        value: "ucundinamarca.edu.co"
+      - key: BACKEND_CORS_ORIGINS
+        value: '["*"]'
+
+  # 2. Dashboard de Analítica y EDA con Streamlit
+  - type: web
+    name: unibooks-analytics-dashboard
+    runtime: docker
+    dockerContext: ./analytics
+    dockerfilePath: ./analytics/Dockerfile
+    plan: free
+    region: oregon
+    envVars:
+      - key: PORT
+        value: 8501

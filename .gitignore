@@ -1,0 +1,38 @@
+# Entornos virtuales de Python
+.venv/
+venv/
+ENV/
+env/
+
+# Caché y archivos compilados de Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.pytest_cache/
+.pytest_cache/
+
+# Bases de datos locales SQLite
+*.db
+*.sqlite3
+
+# Firebase y herramientas de despliegue
+.firebase/
+firebase-debug.log*
+firestore-debug.log*
+
+# Configuraciones de IDE / Editor
+.vscode/
+.idea/
+
+# Flutter y compilados
+frontend/build/
+frontend/.dart_tool/
+frontend/.flutter-plugins
+frontend/.flutter-plugins-dependencies
+frontend/.pub-cache/
+frontend/.pub/
+
+# Archivos del sistema y logs
+*.log
+.DS_Store
+Thumbs.db
