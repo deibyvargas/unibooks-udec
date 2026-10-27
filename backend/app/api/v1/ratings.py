@@ -3,7 +3,7 @@ from fastapi import APIRouter, Depends, status
 from sqlalchemy.orm import Session
 from app.api.deps import get_db, get_current_user
 from app.models.entities import Usuario
-from app.schemas.schemas import CalificacionCreate, CalificacionOut
+from app.schemas.schemas import CalificacionCreate, CalificacionOut, EvaluacionEntregaOut
 from app.services.rating_service import RatingService
 
 router = APIRouter(prefix="/calificaciones", tags=["4. Sistema de Calificación y Reputación"])
@@ -21,3 +21,12 @@ def crear_calificacion(
 def get_user_ratings(usuario_id: str, db: Session = Depends(get_db)):
     """Retorna el historial de opiniones y calificaciones institucionales de un estudiante."""
     return RatingService.get_by_user(db, usuario_id)
+
+@router.post("/entregas/{transaccion_id}/omitir", status_code=status.HTTP_204_NO_CONTENT)
+def skip_delivery_rating(
+    transaccion_id: str,
+    current_user: Usuario = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    RatingService.skip_rating(db, transaccion_id, current_user)
+    return None

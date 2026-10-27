@@ -8,6 +8,115 @@ service cloud.firestore {
              request.auth.token.email.matches('.*@ucundinamarca\\.edu\\.co$');
     }
 
+    function isAdmin() {
+      return isAuthenticated() &&
+        get(/databases/$(database)/documents/usuarios/$(request.auth.uid)).data.rol
+          in ['ADMIN', 'ADMINISTRADOR'];
+    }
+
+    function ownsPublication(data) {
+      return isAuthenticated() && data.usuario_id == request.auth.uid;
+    }
+
+    function publicationIsAvailable(data) {
+      return data.estado == 'DISPONIBLE';
+    }
+
+    match /publicaciones/{publicationId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated() &&
+        request.resource.data.usuario_id == request.auth.uid;
+      allow update: if isAdmin() ||
+        (ownsPublication(resource.data) && ownsPublication(request.resource.data)) ||
+        (request.resource.data.estado == 'NO_DISPONIBLE' &&
+         request.resource.data.ultima_transaccion_id != null &&
+         get(/databases/$(database)/documents/transacciones/$(request.resource.data.ultima_transaccion_id)).data.estado == 'COMPLETADA' &&
+         get(/databases/$(database)/documents/transacciones/$(request.resource.data.ultima_transaccion_id)).data.vendedor_id == request.auth.uid);
+      allow delete: if isAuthenticated() &&
+        publicationIsAvailable(resource.data) &&
+        (isAdmin() || ownsPublication(resource.data));
+    }
+
+    match /libros/{publicationId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated() &&
+        request.resource.data.usuario_id == request.auth.uid;
+      allow update: if isAdmin() ||
+        (ownsPublication(resource.data) && ownsPublication(request.resource.data)) ||
+        (request.resource.data.estado == 'NO_DISPONIBLE' &&
+         request.resource.data.ultima_transaccion_id != null &&
+         get(/databases/$(database)/documents/transacciones/$(request.resource.data.ultima_transaccion_id)).data.estado == 'COMPLETADA' &&
+         get(/databases/$(database)/documents/transacciones/$(request.resource.data.ultima_transaccion_id)).data.vendedor_id == request.auth.uid);
+      allow delete: if isAuthenticated() &&
+        publicationIsAvailable(resource.data) &&
+        (isAdmin() || ownsPublication(resource.data));
+    }
+
+    match /usuarios/{userId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated() && request.auth.uid == userId;
+      allow update: if isAdmin() ||
+        (request.auth.uid == userId &&
+         request.resource.data.diff(resource.data).affectedKeys()
+           .hasOnly(['nombre', 'foto_url', 'telefono', 'reputacion_promedio',
+             'total_calificaciones', 'updated_at']));
+      allow delete: if isAdmin();
+    }
+
+    match /solicitudes_intercambio/{requestId} {
+      allow read: if isAuthenticated() &&
+        (resource.data.usuario_solicitante_id == request.auth.uid ||
+         resource.data.usuario_receptor_id == request.auth.uid);
+      allow create: if isAuthenticated() &&
+        request.resource.data.usuario_solicitante_id == request.auth.uid &&
+        request.resource.data.estado == 'PENDIENTE';
+      allow update: if isAuthenticated() &&
+        resource.data.usuario_receptor_id == request.auth.uid;
+      allow delete: if isAdmin();
+    }
+
+    match /transacciones/{transactionId} {
+      allow read: if isAuthenticated() &&
+        (resource.data.comprador_id == request.auth.uid ||
+         resource.data.vendedor_id == request.auth.uid || isAdmin());
+      allow create: if isAuthenticated() &&
+        (
+          (request.resource.data.comprador_id == request.auth.uid &&
+           request.resource.data.estado == 'SOLICITUD_PENDIENTE') ||
+          (request.resource.data.vendedor_id == request.auth.uid &&
+           request.resource.data.estado == 'PENDIENTE_ENCUENTRO' &&
+           request.resource.data.solicitud_intercambio_id != null)
+        );
+      allow update: if isAuthenticated() &&
+        (
+          (resource.data.vendedor_id == request.auth.uid &&
+           request.resource.data.vendedor_id == resource.data.vendedor_id &&
+           request.resource.data.comprador_id == resource.data.comprador_id)
+          ||
+          ((resource.data.vendedor_id == request.auth.uid ||
+            resource.data.comprador_id == request.auth.uid) &&
+           request.resource.data.diff(resource.data).affectedKeys()
+             .hasOnly(['evaluacion_' + request.auth.uid]))
+        );
+      allow delete: if isAdmin();
+    }
+
+    match /calificaciones/{ratingId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated() &&
+        request.resource.data.evaluador_id == request.auth.uid;
+      allow update, delete: if false;
+    }
+
+    match /notificaciones/{notificationId} {
+      allow read: if isAuthenticated() &&
+        resource.data.usuario_id == request.auth.uid;
+      allow update: if isAuthenticated() &&
+        resource.data.usuario_id == request.auth.uid;
+      allow create: if isAuthenticated();
+      allow delete: if isAdmin();
+    }
+
     // Función auxiliar para verificar si el usuario es participante del chat
     function isParticipant(chatData) {
       return isAuthenticated() && 
@@ -32,10 +141,12 @@ service cloud.firestore {
         
         // Permitir envío de mensajes si es participante y el remitente coincide con el auth.uid
         allow create: if isParticipant(get(/databases/$(database)/documents/chats/$(chatId)).data) &&
-                         request.resource.data.remitenteUid == request.auth.uid;
+                         request.resource.data.remitente_id == request.auth.uid;
                          
-        // Los mensajes son inmutables por trazabilidad académica y auditoría
-        allow update, delete: if false;
+        allow update: if isParticipant(get(/databases/$(database)/documents/chats/$(chatId)).data) &&
+                         resource.data.remitente_id == request.auth.uid;
+        allow delete: if isParticipant(get(/databases/$(database)/documents/chats/$(chatId)).data) &&
+                         resource.data.remitente_id == request.auth.uid;
       }
     }
 

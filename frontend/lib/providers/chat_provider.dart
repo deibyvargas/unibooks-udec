@@ -1,7 +1,9 @@
 import 'dart:async';
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+
 import '../models/chat_model.dart';
 
 class ChatProvider extends ChangeNotifier {
@@ -40,19 +42,22 @@ class ChatProvider extends ChangeNotifier {
         .collection('mensajes')
         .orderBy('created_at', descending: false)
         .snapshots()
-        .listen((snapshot) {
-      final mensajes = snapshot.docs.map((doc) {
-        final data = Map<String, dynamic>.from(doc.data());
-        data['id'] = doc.id;
-        data['conversacion_id'] = conversacionId;
-        return MensajeModel.fromJson(data);
-      }).toList();
+        .listen(
+          (snapshot) {
+            final mensajes = snapshot.docs.map((doc) {
+              final data = Map<String, dynamic>.from(doc.data());
+              data['id'] = doc.id;
+              data['conversacion_id'] = conversacionId;
+              return MensajeModel.fromJson(data);
+            }).toList();
 
-      _mensajesPorConversacion[conversacionId] = mensajes;
-      notifyListeners();
-    }, onError: (e) {
-      debugPrint('[ChatProvider] Error en stream de mensajes: $e');
-    });
+            _mensajesPorConversacion[conversacionId] = mensajes;
+            notifyListeners();
+          },
+          onError: (e) {
+            debugPrint('[ChatProvider] Error en stream de mensajes: $e');
+          },
+        );
   }
 
   /// Detiene la suscripción de tiempo real al salir del chat
@@ -97,7 +102,9 @@ class ChatProvider extends ChangeNotifier {
         // Determinar quién es el otro usuario
         final u1 = data['usuario_uno_id'] ?? '';
         final isUserOne = (u1 == uid);
-        data['otro_usuario_id'] = isUserOne ? data['usuario_dos_id'] : data['usuario_uno_id'];
+        data['otro_usuario_id'] = isUserOne
+            ? data['usuario_dos_id']
+            : data['usuario_uno_id'];
         data['otro_usuario_nombre'] = isUserOne
             ? (data['usuario_dos_nombre'] ?? 'Compañero UDEC')
             : (data['usuario_uno_nombre'] ?? 'Compañero UDEC');
@@ -118,6 +125,19 @@ class ChatProvider extends ChangeNotifier {
     }
   }
 
+  Future<bool> _isUserSuspended(String uid) async {
+    try {
+      final doc = await _firestore.collection('usuarios').doc(uid).get();
+      final data = doc.data() ?? {};
+      return data['estado'] == 'SUSPENDIDO' ||
+          data['status'] == 'suspended' ||
+          data['is_suspended'] == true ||
+          data['activo'] == false;
+    } catch (_) {
+      return false;
+    }
+  }
+
   /// Inicia o abre una conversación vinculada a un libro
   Future<ConversacionModel?> iniciarOObtenerConversacion({
     required String destinatarioId,
@@ -125,6 +145,12 @@ class ChatProvider extends ChangeNotifier {
   }) async {
     final uid = currentUserId;
     if (uid == null) return null;
+
+    if (await _isUserSuspended(uid)) {
+      _errorMessage = 'Tu cuenta ha sido suspendida por un administrador';
+      notifyListeners();
+      return null;
+    }
 
     _isLoading = true;
     _errorMessage = null;
@@ -150,7 +176,10 @@ class ChatProvider extends ChangeNotifier {
       }
 
       // Obtener datos del destinatario
-      final destDoc = await _firestore.collection('usuarios').doc(destinatarioId).get();
+      final destDoc = await _firestore
+          .collection('usuarios')
+          .doc(destinatarioId)
+          .get();
       final destData = destDoc.data() ?? {};
       final destNombre = destData['nombre_completo'] ?? 'Compañero UDEC';
       final destAvatar = destData['avatar_url'];
@@ -158,7 +187,9 @@ class ChatProvider extends ChangeNotifier {
       // Obtener datos del usuario actual
       final myDoc = await _firestore.collection('usuarios').doc(uid).get();
       final myData = myDoc.data() ?? {};
-      final myNombre = myData['nombre_completo'] ?? (_auth.currentUser?.displayName ?? 'Usuario');
+      final myNombre =
+          myData['nombre_completo'] ??
+          (_auth.currentUser?.displayName ?? 'Usuario');
       final myAvatar = myData['avatar_url'];
 
       // Crear nueva conversación
@@ -199,7 +230,10 @@ class ChatProvider extends ChangeNotifier {
   }
 
   /// Carga los mensajes de un chat específico
-  Future<void> cargarMensajes(String conversacionId, {bool silent = false}) async {
+  Future<void> cargarMensajes(
+    String conversacionId, {
+    bool silent = false,
+  }) async {
     try {
       final snap = await _firestore
           .collection('chats')
@@ -235,6 +269,12 @@ class ChatProvider extends ChangeNotifier {
     final uid = currentUserId;
     if (uid == null) return false;
 
+    if (await _isUserSuspended(uid)) {
+      _errorMessage = 'Tu cuenta ha sido suspendida por un administrador';
+      notifyListeners();
+      return false;
+    }
+
     try {
       final msgRef = _firestore
           .collection('chats')
@@ -258,11 +298,42 @@ class ChatProvider extends ChangeNotifier {
 
       // Actualizar último mensaje del chat
       await _firestore.collection('chats').doc(conversacionId).update({
-        'ultimo_mensaje_texto': tipo == 'IMAGE' ? '📷 Foto adjunta' : (contenido ?? ''),
+        'ultimo_mensaje_texto': tipo == 'IMAGE'
+            ? '📷 Foto adjunta'
+            : (contenido ?? ''),
         'ultimo_mensaje_tipo': tipo,
         'ultimo_mensaje_at': nowIso,
       });
 
+      return true;
+    } catch (e) {
+      _errorMessage = e.toString();
+      notifyListeners();
+      return false;
+    }
+  }
+
+  Future<bool> eliminarMensaje({
+    required String conversacionId,
+    required String mensajeId,
+  }) async {
+    final uid = currentUserId;
+    if (uid == null) return false;
+
+    try {
+      final messageRef = _firestore
+          .collection('chats')
+          .doc(conversacionId)
+          .collection('mensajes')
+          .doc(mensajeId);
+      final message = await messageRef.get();
+      if (!message.exists || message.data()?['remitente_id'] != uid) {
+        _errorMessage = 'Solo puedes eliminar tus propios mensajes';
+        notifyListeners();
+        return false;
+      }
+
+      await messageRef.delete();
       return true;
     } catch (e) {
       _errorMessage = e.toString();

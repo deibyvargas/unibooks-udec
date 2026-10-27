@@ -14,6 +14,7 @@ __pycache__/
 # Bases de datos locales SQLite
 *.db
 *.sqlite3
+.env
 
 # Firebase y herramientas de despliegue
 .firebase/

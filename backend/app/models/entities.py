@@ -2,7 +2,7 @@ import uuid
 from datetime import datetime, timezone
 from sqlalchemy import (
     Column, String, Integer, SmallInteger, Numeric, Boolean,
-    DateTime, ForeignKey, Text, Enum
+    DateTime, ForeignKey, Text, Enum, UniqueConstraint
 )
 from sqlalchemy.orm import relationship
 from app.core.database import Base
@@ -124,7 +124,7 @@ class Usuario(Base):
     rol = Column(String(30), nullable=False, default="ESTUDIANTE")
     estado = Column(String(30), nullable=False, default="ACTIVO")
     activo = Column(Boolean, nullable=False, default=True)
-    reputacion_promedio = Column(Numeric(3, 2), nullable=False, default=5.00)
+    reputacion_promedio = Column(Numeric(3, 2), nullable=False, default=0.00)
     total_calificaciones = Column(Integer, nullable=False, default=0)
     biografia = Column(String(300), nullable=True)
     created_at = Column(DateTime, default=get_utc_now)
@@ -292,6 +292,23 @@ class Calificacion(Base):
     transaccion = relationship("Transaccion", back_populates="calificaciones")
     evaluador = relationship("Usuario", foreign_keys=[evaluador_id])
     evaluado = relationship("Usuario", foreign_keys=[evaluado_id])
+
+
+class EvaluacionEntrega(Base):
+    __tablename__ = "evaluaciones_entrega"
+
+    id = Column(String(36), primary_key=True, default=generate_uuid)
+    transaccion_id = Column(String(36), ForeignKey("transacciones.id", ondelete="CASCADE"), nullable=False, index=True)
+    evaluador_id = Column(String(36), ForeignKey("usuarios.id", ondelete="CASCADE"), nullable=False, index=True)
+    estado = Column(String(15), nullable=False, default="PENDIENTE")
+    calificacion_id = Column(String(36), ForeignKey("calificaciones.id", ondelete="SET NULL"), nullable=True)
+    created_at = Column(DateTime, default=get_utc_now)
+
+    __table_args__ = (
+        UniqueConstraint(
+            "transaccion_id", "evaluador_id", name="uq_evaluacion_entrega_usuario"
+        ),
+    )
 
 
 # ==============================================================================

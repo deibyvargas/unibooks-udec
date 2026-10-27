@@ -24,7 +24,11 @@ class TradeService:
 
         if solicitud_in.publicacion_ofrecida_id:
             pub_ofrecida = db.query(Publicacion).filter(Publicacion.id == solicitud_in.publicacion_ofrecida_id).first()
-            if not pub_ofrecida or pub_ofrecida.usuario_id != current_user.id:
+            if (
+                not pub_ofrecida
+                or pub_ofrecida.usuario_id != current_user.id
+                or pub_ofrecida.estado != "DISPONIBLE"
+            ):
                 raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="El libro ofrecido debe pertenecer a tu catálogo")
 
         nueva_solicitud = SolicitudIntercambio(

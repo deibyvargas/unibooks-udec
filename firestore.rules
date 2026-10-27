@@ -3,48 +3,106 @@ service cloud.firestore {
   match /databases/{database}/documents {
     
     function isAuthenticated() {
-      return request.auth != null;
+      return request.auth != null &&
+        request.auth.token.email.matches('.*@ucundinamarca\\.edu\\.co$');
     }
     
     function isAdmin() {
-      return request.auth != null && 
-        (request.auth.token.email == 'vargasdeiby54@gmail.com' || request.auth.email == 'vargasdeiby54@gmail.com');
+      return isAuthenticated() &&
+        get(/databases/$(database)/documents/usuarios/$(request.auth.uid)).data.rol
+          in ['ADMINISTRADOR', 'ADMIN'];
     }
 
     // Colección de Usuarios
     match /usuarios/{userId} {
       allow read: if isAuthenticated();
       allow create: if isAuthenticated() && request.auth.uid == userId;
-      allow update, delete: if isAuthenticated() && (request.auth.uid == userId || isAdmin());
+      allow update: if isAdmin() ||
+        (request.auth.uid == userId &&
+         request.resource.data.diff(resource.data).affectedKeys()
+           .hasOnly(['nombre', 'foto_url', 'telefono', 'reputacion_promedio',
+             'total_calificaciones', 'updated_at']));
+      allow delete: if isAdmin();
     }
 
     // Catálogo de Libros y Publicaciones
     match /libros/{libroId} {
-      allow read: if true;
-      allow create: if isAuthenticated();
-      allow update, delete: if isAuthenticated() && (resource.data.usuario_id == request.auth.uid || isAdmin());
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated() && request.resource.data.usuario_id == request.auth.uid;
+      allow update: if isAdmin() ||
+        (resource.data.usuario_id == request.auth.uid &&
+         request.resource.data.usuario_id == request.auth.uid) ||
+        (request.resource.data.estado == 'NO_DISPONIBLE' &&
+         request.resource.data.ultima_transaccion_id != null &&
+         get(/databases/$(database)/documents/transacciones/$(request.resource.data.ultima_transaccion_id)).data.estado == 'COMPLETADA' &&
+         get(/databases/$(database)/documents/transacciones/$(request.resource.data.ultima_transaccion_id)).data.vendedor_id == request.auth.uid);
+      allow delete: if isAuthenticated() &&
+        resource.data.estado == 'DISPONIBLE' &&
+        (isAdmin() || resource.data.usuario_id == request.auth.uid);
     }
 
     match /publicaciones/{pubId} {
-      allow read: if true;
-      allow create: if isAuthenticated();
-      allow update, delete: if isAuthenticated() && (resource.data.usuario_id == request.auth.uid || isAdmin());
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated() && request.resource.data.usuario_id == request.auth.uid;
+      allow update: if isAdmin() ||
+        (resource.data.usuario_id == request.auth.uid &&
+         request.resource.data.usuario_id == request.auth.uid) ||
+        (request.resource.data.estado == 'NO_DISPONIBLE' &&
+         request.resource.data.ultima_transaccion_id != null &&
+         get(/databases/$(database)/documents/transacciones/$(request.resource.data.ultima_transaccion_id)).data.estado == 'COMPLETADA' &&
+         get(/databases/$(database)/documents/transacciones/$(request.resource.data.ultima_transaccion_id)).data.vendedor_id == request.auth.uid);
+      allow delete: if isAuthenticated() &&
+        resource.data.estado == 'DISPONIBLE' &&
+        (isAdmin() || resource.data.usuario_id == request.auth.uid);
     }
 
     // Solicitudes de Intercambio
     match /solicitudes_intercambio/{tradeId} {
-      allow read, write: if isAuthenticated();
+      allow read: if isAuthenticated() &&
+        (resource.data.usuario_solicitante_id == request.auth.uid ||
+         resource.data.usuario_receptor_id == request.auth.uid);
+      allow create: if isAuthenticated() &&
+        request.resource.data.usuario_solicitante_id == request.auth.uid &&
+        request.resource.data.estado == 'PENDIENTE';
+      allow update: if isAuthenticated() &&
+        resource.data.usuario_receptor_id == request.auth.uid;
+      allow delete: if isAdmin();
     }
 
     // Transacciones y Reservas
     match /transacciones/{txId} {
-      allow read, write: if isAuthenticated();
+      allow read: if isAuthenticated() &&
+        (resource.data.comprador_id == request.auth.uid ||
+         resource.data.vendedor_id == request.auth.uid || isAdmin());
+      allow create: if isAuthenticated() &&
+        (
+          (request.resource.data.comprador_id == request.auth.uid &&
+           request.resource.data.estado == 'SOLICITUD_PENDIENTE')
+          ||
+          (request.resource.data.vendedor_id == request.auth.uid &&
+           request.resource.data.estado == 'PENDIENTE_ENCUENTRO' &&
+           request.resource.data.solicitud_intercambio_id != null)
+        );
+      allow update: if isAuthenticated() &&
+        (
+          (resource.data.vendedor_id == request.auth.uid &&
+           request.resource.data.vendedor_id == resource.data.vendedor_id &&
+           request.resource.data.comprador_id == resource.data.comprador_id)
+          ||
+          ((resource.data.vendedor_id == request.auth.uid ||
+            resource.data.comprador_id == request.auth.uid) &&
+           request.resource.data.diff(resource.data).affectedKeys()
+             .hasOnly(['evaluacion_' + request.auth.uid]))
+        );
+      allow delete: if isAdmin();
     }
 
     // Calificaciones y Reputación
     match /calificaciones/{calId} {
       allow read: if true;
-      allow create, write: if isAuthenticated();
+      allow create: if isAuthenticated() &&
+        request.resource.data.evaluador_id == request.auth.uid;
+      allow update, delete: if false;
     }
 
     // Chats y Mensajería en Tiempo Real
@@ -52,7 +110,13 @@ service cloud.firestore {
       allow read, write: if isAuthenticated();
 
       match /mensajes/{mensajeId} {
-        allow read, write: if isAuthenticated();
+        allow read: if isAuthenticated();
+        allow create: if isAuthenticated() &&
+          request.resource.data.remitente_id == request.auth.uid;
+        allow delete: if isAuthenticated() &&
+          resource.data.remitente_id == request.auth.uid;
+        allow update: if isAuthenticated() &&
+          resource.data.remitente_id == request.auth.uid;
       }
     }
 
@@ -72,10 +136,5 @@ service cloud.firestore {
       allow write: if isAdmin();
     }
 
-    // Regla de respaldo para colecciones operativas
-    match /{document=**} {
-      allow read: if true;
-      allow write: if isAuthenticated();
-    }
   }
 }

@@ -276,6 +276,17 @@ class TransaccionCreate(BaseModel):
     punto_encuentro_id: str
     fecha_hora_encuentro: datetime
 
+class TransaccionRespuesta(BaseModel):
+    aceptar: bool
+
+class EvaluacionEntregaOut(BaseModel):
+    transaccion_id: str
+    evaluador_id: str
+    estado: str
+    puntuacion: Optional[int] = None
+
+    model_config = ConfigDict(from_attributes=True)
+
 class TransaccionConfirmacionEntrega(BaseModel):
     codigo_verificacion: str = Field(..., min_length=4, max_length=6, examples=["482910"])
     observaciones: Optional[str] = None

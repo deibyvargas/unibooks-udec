@@ -1,13 +1,17 @@
+import 'dart:async';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import '../models/user_model.dart';
 import '../services/auth_service.dart';
+import '../core/navigation/app_navigator.dart';
 
 class AuthProvider extends ChangeNotifier {
   final AuthService _authService = AuthService();
   final FirebaseAuth _auth = FirebaseAuth.instance;
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+
+  StreamSubscription<DocumentSnapshot>? _userDocSub;
 
   UserModel? _currentUser;
   bool _isLoading = false;
@@ -22,6 +26,34 @@ class AuthProvider extends ChangeNotifier {
     _initSession();
   }
 
+  void _startUserLiveWatcher(String uid) {
+    _userDocSub?.cancel();
+    _userDocSub = _firestore.collection('usuarios').doc(uid).snapshots().listen((snap) async {
+      if (snap.exists && snap.data() != null) {
+        final data = Map<String, dynamic>.from(snap.data() as Map);
+        final bool isSuspended = data['estado'] == 'SUSPENDIDO' ||
+            data['status'] == 'suspended' ||
+            data['is_suspended'] == true ||
+            data['activo'] == false;
+
+        if (isSuspended) {
+          debugPrint('[AuthProvider] Alerta de seguridad: Usuario suspendido por un Administrador.');
+          _errorMessage = 'Tu cuenta ha sido suspendida por un administrador';
+          _userDocSub?.cancel();
+          _userDocSub = null;
+          _currentUser = null;
+          await _authService.logout();
+          notifyListeners();
+          AppNavigator.navigateToLoginWithSuspensionNotice('Tu cuenta ha sido suspendida por un administrador');
+        } else {
+          data['id'] = snap.id;
+          _currentUser = UserModel.fromJson(data);
+          notifyListeners();
+        }
+      }
+    });
+  }
+
   Future<void> _initSession() async {
     _isLoading = true;
     notifyListeners();
@@ -29,7 +61,17 @@ class AuthProvider extends ChangeNotifier {
     try {
       final user = _auth.currentUser;
       if (user != null) {
-        _currentUser = await _authService.getUserProfile(user.uid);
+        final profile = await _authService.getUserProfile(user.uid);
+        if (profile != null && (profile.estado == 'SUSPENDIDO' || !profile.isActivo)) {
+          _errorMessage = 'Tu cuenta ha sido suspendida por un administrador';
+          await _authService.logout();
+          _currentUser = null;
+        } else {
+          _currentUser = profile;
+          if (_currentUser != null) {
+            _startUserLiveWatcher(user.uid);
+          }
+        }
       } else {
         _currentUser = null;
       }
@@ -44,6 +86,8 @@ class AuthProvider extends ChangeNotifier {
     // Escuchar cambios de sesión en Firebase en tiempo real
     _authService.authStateChanges.listen((user) async {
       if (user == null) {
+        _userDocSub?.cancel();
+        _userDocSub = null;
         _currentUser = null;
         notifyListeners();
       }
@@ -63,6 +107,9 @@ class AuthProvider extends ChangeNotifier {
 
     if (result.isSuccess) {
       _currentUser = result.userModel;
+      if (_currentUser != null) {
+        _startUserLiveWatcher(_currentUser!.firebaseUid);
+      }
       notifyListeners();
       return true;
     } else {
@@ -97,6 +144,9 @@ class AuthProvider extends ChangeNotifier {
 
     if (result.isSuccess) {
       _currentUser = result.userModel;
+      if (_currentUser != null) {
+        _startUserLiveWatcher(_currentUser!.firebaseUid);
+      }
       notifyListeners();
       return true;
     } else {
@@ -138,6 +188,8 @@ class AuthProvider extends ChangeNotifier {
   }
 
   Future<void> logout() async {
+    _userDocSub?.cancel();
+    _userDocSub = null;
     await _authService.logout();
     _currentUser = null;
     notifyListeners();

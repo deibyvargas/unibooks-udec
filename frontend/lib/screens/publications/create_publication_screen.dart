@@ -143,11 +143,18 @@ class _CreatePublicationScreenState extends State<CreatePublicationScreen> {
       return;
     }
 
-    // Validar sesión de usuario
+    // Validar sesión de usuario y estado activo
     final auth = context.read<AuthProvider>();
     if (!auth.isAuthenticated) {
       const msg = 'Error 401: No has iniciado sesión. Ingresa con tu cuenta institucional para publicar.';
       debugPrint('[DEBUG] Error de autenticación: $msg');
+      _showErrorSnackBar(msg);
+      return;
+    }
+
+    if (auth.currentUser?.isSuspended == true || auth.currentUser?.isActivo == false) {
+      const msg = 'Tu cuenta ha sido suspendida por un administrador';
+      debugPrint('[DEBUG] Usuario suspendido: $msg');
       _showErrorSnackBar(msg);
       return;
     }

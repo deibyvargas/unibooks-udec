@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+
 import '../../core/constants/app_colors.dart';
 import '../../models/trade_model.dart';
 import '../../models/transaction_model.dart';
@@ -12,7 +13,8 @@ class TradesScreen extends StatefulWidget {
   State<TradesScreen> createState() => _TradesScreenState();
 }
 
-class _TradesScreenState extends State<TradesScreen> with SingleTickerProviderStateMixin {
+class _TradesScreenState extends State<TradesScreen>
+    with SingleTickerProviderStateMixin {
   late TabController _tabController;
 
   @override
@@ -36,7 +38,7 @@ class _TradesScreenState extends State<TradesScreen> with SingleTickerProviderSt
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Validación de Entrega en Campus'),
+        title: const Text('Confirmar Entrega en Campus'),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -45,26 +47,27 @@ class _TradesScreenState extends State<TradesScreen> with SingleTickerProviderSt
               'Punto Seguro: ${tx.puntoEncuentro?.nombre ?? "Campus UDEC"}',
               style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
             ),
-            const SizedBox(height: 8),
-            Container(
-              padding: const EdgeInsets.all(10),
-              decoration: BoxDecoration(
-                color: Colors.amber.withOpacity(0.12),
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: Text(
-                'Tu PIN de seguridad asignado es: ${tx.codigoVerificacionEntrega}',
-                style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.brown, fontSize: 13),
-              ),
+            const SizedBox(height: 10),
+            const Text(
+              'Pide al solicitante que te dicte el PIN de 4 dígitos que tiene asignado para validar la entrega física:',
+              style: TextStyle(fontSize: 13, color: AppColors.textSecondary),
             ),
-            const SizedBox(height: 12),
+            const SizedBox(height: 14),
             TextField(
               controller: pinController,
               keyboardType: TextInputType.number,
-              maxLength: 6,
+              maxLength: 4,
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                fontSize: 22,
+                fontWeight: FontWeight.bold,
+                letterSpacing: 6,
+              ),
               decoration: const InputDecoration(
-                labelText: 'Ingresa el código PIN recibido',
-                hintText: '6 dígitos',
+                labelText: 'Ingresa el PIN de 4 dígitos',
+                hintText: '••••',
+                counterText: '',
+                prefixIcon: Icon(Icons.lock_outline),
               ),
             ),
           ],
@@ -72,24 +75,41 @@ class _TradesScreenState extends State<TradesScreen> with SingleTickerProviderSt
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
-            child: const Text('Cerrar'),
+            child: const Text('Cancelar'),
           ),
           ElevatedButton(
             onPressed: () async {
               final pin = pinController.text.trim();
-              if (pin.length != 6) return;
+              if (pin.length != 4) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text(
+                      'Por favor, ingresa el código PIN de 4 dígitos.',
+                    ),
+                    backgroundColor: AppColors.danger,
+                  ),
+                );
+                return;
+              }
               Navigator.pop(ctx);
 
-              final success = await context.read<TradeProvider>().confirmDelivery(tx.id, pin);
+              final success = await context
+                  .read<TradeProvider>()
+                  .confirmDelivery(tx.id, pin);
               if (mounted) {
+                final errorMsg =
+                    context.read<TradeProvider>().errorMessage ??
+                    'PIN incorrecto, verifica con el solicitante';
                 ScaffoldMessenger.of(context).showSnackBar(
                   SnackBar(
                     content: Text(
                       success
-                          ? '¡Entrega confirmada con éxito! Transacción completada.'
-                          : 'PIN incorrecto o error al confirmar entrega.',
+                          ? '¡Entrega confirmada con éxito! Transacción completada y libro retirado del catálogo.'
+                          : errorMsg,
                     ),
-                    backgroundColor: success ? AppColors.success : AppColors.danger,
+                    backgroundColor: success
+                        ? AppColors.success
+                        : AppColors.danger,
                   ),
                 );
                 if (success) {
@@ -105,7 +125,7 @@ class _TradesScreenState extends State<TradesScreen> with SingleTickerProviderSt
   }
 
   void _showRatingDialog(TransaccionModel tx) {
-    int rating = 5;
+    int rating = 0;
     int punctuality = 5;
     int bookFidelity = 5;
     final commentCtrl = TextEditingController();
@@ -128,10 +148,16 @@ class _TradesScreenState extends State<TradesScreen> with SingleTickerProviderSt
               children: [
                 Text(
                   'Evalúa la experiencia de entrega para "${tx.publicacion?.titulo ?? "Libro"}":',
-                  style: const TextStyle(fontSize: 13, color: AppColors.textSecondary),
+                  style: const TextStyle(
+                    fontSize: 13,
+                    color: AppColors.textSecondary,
+                  ),
                 ),
                 const SizedBox(height: 16),
-                const Text('Puntuación General:', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                const Text(
+                  'Puntuación General:',
+                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                ),
                 const SizedBox(height: 4),
                 Row(
                   mainAxisAlignment: MainAxisAlignment.center,
@@ -139,7 +165,9 @@ class _TradesScreenState extends State<TradesScreen> with SingleTickerProviderSt
                     final starIndex = index + 1;
                     return IconButton(
                       icon: Icon(
-                        starIndex <= rating ? Icons.star_rounded : Icons.star_outline_rounded,
+                        starIndex <= rating
+                            ? Icons.star_rounded
+                            : Icons.star_outline_rounded,
                         color: Colors.amber,
                         size: 32,
                       ),
@@ -148,7 +176,10 @@ class _TradesScreenState extends State<TradesScreen> with SingleTickerProviderSt
                   }),
                 ),
                 const SizedBox(height: 12),
-                const Text('Puntualidad en el Punto Seguro:', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                const Text(
+                  'Puntualidad en el Punto Seguro:',
+                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                ),
                 Slider(
                   value: punctuality.toDouble(),
                   min: 1,
@@ -156,10 +187,14 @@ class _TradesScreenState extends State<TradesScreen> with SingleTickerProviderSt
                   divisions: 4,
                   label: '$punctuality / 5',
                   activeColor: AppColors.primary,
-                  onChanged: (val) => setDialogState(() => punctuality = val.round()),
+                  onChanged: (val) =>
+                      setDialogState(() => punctuality = val.round()),
                 ),
                 const SizedBox(height: 8),
-                const Text('Fidelidad del Estado del Libro:', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                const Text(
+                  'Fidelidad del Estado del Libro:',
+                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                ),
                 Slider(
                   value: bookFidelity.toDouble(),
                   min: 1,
@@ -167,7 +202,8 @@ class _TradesScreenState extends State<TradesScreen> with SingleTickerProviderSt
                   divisions: 4,
                   label: '$bookFidelity / 5',
                   activeColor: AppColors.primary,
-                  onChanged: (val) => setDialogState(() => bookFidelity = val.round()),
+                  onChanged: (val) =>
+                      setDialogState(() => bookFidelity = val.round()),
                 ),
                 const SizedBox(height: 12),
                 TextField(
@@ -175,14 +211,40 @@ class _TradesScreenState extends State<TradesScreen> with SingleTickerProviderSt
                   maxLines: 2,
                   decoration: const InputDecoration(
                     labelText: 'Comentario sobre el compañero...',
-                    hintText: 'Excelente puntualidad y libro en estado impecable.',
+                    hintText:
+                        'Excelente puntualidad y libro en estado impecable.',
                   ),
                 ),
               ],
             ),
           ),
           actions: [
-            TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Omitir')),
+            TextButton(
+              onPressed: () async {
+                if (rating == 0) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text(
+                        'Selecciona una puntuación de 1 a 5 estrellas.',
+                      ),
+                    ),
+                  );
+                  return;
+                }
+                Navigator.pop(ctx);
+                final ok = await context.read<TradeProvider>().skipRating(
+                  tx.id,
+                );
+                if (mounted && !ok) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('Esta entrega ya fue evaluada u omitida.'),
+                    ),
+                  );
+                }
+              },
+              child: const Text('Omitir'),
+            ),
             ElevatedButton(
               onPressed: () async {
                 Navigator.pop(ctx);
@@ -196,8 +258,14 @@ class _TradesScreenState extends State<TradesScreen> with SingleTickerProviderSt
                 if (mounted) {
                   ScaffoldMessenger.of(context).showSnackBar(
                     SnackBar(
-                      content: Text(ok ? '¡Calificación enviada! La reputación del compañero se ha actualizado.' : 'No fue posible registrar la calificación.'),
-                      backgroundColor: ok ? AppColors.success : AppColors.danger,
+                      content: Text(
+                        ok
+                            ? '¡Calificación enviada! La reputación del compañero se ha actualizado.'
+                            : 'No fue posible registrar la calificación.',
+                      ),
+                      backgroundColor: ok
+                          ? AppColors.success
+                          : AppColors.danger,
                     ),
                   );
                 }
@@ -226,7 +294,10 @@ class _TradesScreenState extends State<TradesScreen> with SingleTickerProviderSt
           tabs: const [
             Tab(text: 'Recibidas', icon: Icon(Icons.inbox_rounded, size: 20)),
             Tab(text: 'Enviadas', icon: Icon(Icons.outbox_rounded, size: 20)),
-            Tab(text: 'Entregas Campus', icon: Icon(Icons.meeting_room_rounded, size: 20)),
+            Tab(
+              text: 'Entregas Campus',
+              icon: Icon(Icons.meeting_room_rounded, size: 20),
+            ),
           ],
         ),
       ),
@@ -249,8 +320,13 @@ class _TradesScreenState extends State<TradesScreen> with SingleTickerProviderSt
                       return _TradeCard(
                         trade: trade,
                         isReceived: true,
-                        onAccept: () => tradeProvider.respondTrade(trade.id, true),
-                        onReject: () => tradeProvider.respondTrade(trade.id, false, motivo: 'No disponible por el momento'),
+                        onAccept: () =>
+                            tradeProvider.respondTrade(trade.id, true),
+                        onReject: () => tradeProvider.respondTrade(
+                          trade.id,
+                          false,
+                          motivo: 'No disponible por el momento',
+                        ),
                       );
                     },
                   ),
@@ -269,10 +345,7 @@ class _TradesScreenState extends State<TradesScreen> with SingleTickerProviderSt
                     itemCount: tradeProvider.enviadas.length,
                     itemBuilder: (context, index) {
                       final trade = tradeProvider.enviadas[index];
-                      return _TradeCard(
-                        trade: trade,
-                        isReceived: false,
-                      );
+                      return _TradeCard(trade: trade, isReceived: false);
                     },
                   ),
           ),
@@ -294,6 +367,8 @@ class _TradesScreenState extends State<TradesScreen> with SingleTickerProviderSt
                         tx: tx,
                         onConfirmDelivery: () => _showConfirmDeliveryDialog(tx),
                         onRate: () => _showRatingDialog(tx),
+                        onRespondAcquisition: (accept) =>
+                            tradeProvider.respondAcquisition(tx.id, accept),
                       );
                     },
                   ),
@@ -336,12 +411,18 @@ class _TradeCard extends StatelessWidget {
                   child: Text(
                     isReceived
                         ? 'Propuesta de: ${trade.usuarioSolicitante?.nombreCompleto ?? "Compañero UDEC"}'
-                        : 'Propuesta enviada',
-                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                        : 'Publicado por: ${trade.publicacionSolicitada?.usuario?.nombreCompleto ?? "Compañero UDEC"}',
+                    style: const TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 14,
+                    ),
                   ),
                 ),
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 3,
+                  ),
                   decoration: BoxDecoration(
                     color: statusColor.withOpacity(0.12),
                     borderRadius: BorderRadius.circular(6),
@@ -349,15 +430,60 @@ class _TradeCard extends StatelessWidget {
                   ),
                   child: Text(
                     trade.estado,
-                    style: TextStyle(color: statusColor, fontWeight: FontWeight.bold, fontSize: 11),
+                    style: TextStyle(
+                      color: statusColor,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 11,
+                    ),
                   ),
                 ),
               ],
             ),
             const SizedBox(height: 10),
+            Builder(
+              builder: (_) {
+                final participant = isReceived
+                    ? trade.usuarioSolicitante
+                    : trade.publicacionSolicitada?.usuario;
+                final ratingText =
+                    participant == null || participant.totalCalificaciones == 0
+                    ? 'Sin calificaciones'
+                    : '${participant.reputacionPromedio.toStringAsFixed(1)} ★ (${participant.totalCalificaciones})';
+                return Text(
+                  'Satisfacción del usuario: $ratingText',
+                  style: const TextStyle(
+                    fontSize: 12,
+                    color: AppColors.textSecondary,
+                  ),
+                );
+              },
+            ),
+            const SizedBox(height: 8),
             Text(
               'Libro solicitado: ${trade.publicacionSolicitada?.titulo ?? "Libro"}',
-              style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13, color: AppColors.primary),
+              style: const TextStyle(
+                fontWeight: FontWeight.w600,
+                fontSize: 13,
+                color: AppColors.primary,
+              ),
+            ),
+            const SizedBox(height: 6),
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Icon(
+                  Icons.swap_horiz,
+                  size: 18,
+                  color: AppColors.primary,
+                ),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Text(
+                    'Libro ofrecido: ${trade.publicacionOfrecida?.titulo ?? "No se registró un libro ofrecido"}',
+                    style: const TextStyle(fontSize: 13),
+                  ),
+                ),
+              ],
             ),
             const SizedBox(height: 6),
             Container(
@@ -368,7 +494,10 @@ class _TradeCard extends StatelessWidget {
               ),
               child: Text(
                 '"${trade.mensajePropuesta}"',
-                style: const TextStyle(fontStyle: FontStyle.italic, fontSize: 13),
+                style: const TextStyle(
+                  fontStyle: FontStyle.italic,
+                  fontSize: 13,
+                ),
               ),
             ),
             if (isReceived && trade.esPendiente) ...[
@@ -378,13 +507,15 @@ class _TradeCard extends StatelessWidget {
                 children: [
                   OutlinedButton(
                     onPressed: onReject,
-                    style: OutlinedButton.styleFrom(foregroundColor: AppColors.danger),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: AppColors.danger,
+                    ),
                     child: const Text('Rechazar'),
                   ),
                   const SizedBox(width: 10),
                   ElevatedButton(
                     onPressed: onAccept,
-                    child: const Text('Aceptar Trueque'),
+                    child: const Text('Aceptar'),
                   ),
                 ],
               ),
@@ -400,17 +531,27 @@ class _TransactionCard extends StatelessWidget {
   final TransaccionModel tx;
   final VoidCallback onConfirmDelivery;
   final VoidCallback? onRate;
+  final Future<bool> Function(bool accept)? onRespondAcquisition;
 
   const _TransactionCard({
     required this.tx,
     required this.onConfirmDelivery,
     this.onRate,
+    this.onRespondAcquisition,
   });
 
   @override
   Widget build(BuildContext context) {
     final isPending = tx.estado == 'PENDIENTE_ENCUENTRO';
+    final isApprovalPending = tx.estado == 'SOLICITUD_PENDIENTE';
     final isCompleted = tx.estado == 'COMPLETADA';
+    final isCancelled = tx.estado == 'CANCELADA';
+    final currentUserId = context.watch<TradeProvider>().currentUserId;
+    final isSolicitante = currentUserId == tx.compradorId;
+    final isEntregador = currentUserId == tx.vendedorId;
+    final evaluation = currentUserId == null
+        ? null
+        : tx.evaluaciones[currentUserId];
 
     return Card(
       margin: const EdgeInsets.only(bottom: 14),
@@ -424,19 +565,33 @@ class _TransactionCard extends StatelessWidget {
                 Expanded(
                   child: Text(
                     tx.publicacion?.titulo ?? 'Transacción de Libro',
-                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
+                    style: const TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 15,
+                    ),
                   ),
                 ),
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 3,
+                  ),
                   decoration: BoxDecoration(
-                    color: isPending ? Colors.blue.withOpacity(0.12) : AppColors.success.withOpacity(0.12),
+                    color: (isPending || isApprovalPending)
+                        ? Colors.blue.withOpacity(0.12)
+                        : isCancelled
+                        ? AppColors.danger.withOpacity(0.12)
+                        : AppColors.success.withOpacity(0.12),
                     borderRadius: BorderRadius.circular(6),
                   ),
                   child: Text(
                     tx.estado.replaceAll('_', ' '),
                     style: TextStyle(
-                      color: isPending ? Colors.blue : AppColors.success,
+                      color: (isPending || isApprovalPending)
+                          ? Colors.blue
+                          : isCancelled
+                          ? AppColors.danger
+                          : AppColors.success,
                       fontWeight: FontWeight.bold,
                       fontSize: 11,
                     ),
@@ -445,14 +600,33 @@ class _TransactionCard extends StatelessWidget {
               ],
             ),
             const SizedBox(height: 10),
+            if (tx.publicacionOfrecida != null)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: Text(
+                  'Intercambio por: ${tx.publicacionOfrecida!.titulo}',
+                  style: const TextStyle(
+                    fontSize: 13,
+                    color: AppColors.primary,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
             Row(
               children: [
-                const Icon(Icons.shield_outlined, size: 16, color: AppColors.primary),
+                const Icon(
+                  Icons.shield_outlined,
+                  size: 16,
+                  color: AppColors.primary,
+                ),
                 const SizedBox(width: 6),
                 Expanded(
                   child: Text(
                     'Punto Seguro: ${tx.puntoEncuentro?.nombre ?? "Campus UDEC"}',
-                    style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
+                    style: const TextStyle(
+                      fontWeight: FontWeight.w600,
+                      fontSize: 13,
+                    ),
                   ),
                 ),
               ],
@@ -460,43 +634,153 @@ class _TransactionCard extends StatelessWidget {
             const SizedBox(height: 4),
             Row(
               children: [
-                const Icon(Icons.calendar_today_outlined, size: 14, color: AppColors.textSecondary),
+                const Icon(
+                  Icons.calendar_today_outlined,
+                  size: 14,
+                  color: AppColors.textSecondary,
+                ),
                 const SizedBox(width: 6),
                 Text(
                   'Fecha programada: ${tx.fechaHoraEncuentro.day}/${tx.fechaHoraEncuentro.month}/${tx.fechaHoraEncuentro.year}',
-                  style: const TextStyle(fontSize: 12, color: AppColors.textSecondary),
+                  style: const TextStyle(
+                    fontSize: 12,
+                    color: AppColors.textSecondary,
+                  ),
                 ),
               ],
             ),
             const SizedBox(height: 14),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                  decoration: BoxDecoration(
-                    color: Colors.amber.withOpacity(0.15),
-                    borderRadius: BorderRadius.circular(8),
+            if (isApprovalPending && isEntregador) ...[
+              const Text(
+                'Solicitud pendiente de aprobación. El libro seguirá disponible hasta completar la entrega.',
+                style: TextStyle(fontSize: 12, color: AppColors.textSecondary),
+              ),
+              const SizedBox(height: 10),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  OutlinedButton(
+                    onPressed: () => onRespondAcquisition?.call(false),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: AppColors.danger,
+                    ),
+                    child: const Text('Rechazar'),
                   ),
-                  child: Text(
-                    'PIN: ${tx.codigoVerificacionEntrega}',
-                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Colors.brown),
+                  const SizedBox(width: 8),
+                  ElevatedButton(
+                    onPressed: () => onRespondAcquisition?.call(true),
+                    child: const Text('Aceptar'),
                   ),
+                ],
+              ),
+            ],
+            if (isPending && isSolicitante) ...[
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.amber.withOpacity(0.12),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: Colors.amber.shade700, width: 1.2),
                 ),
-                if (isPending)
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        const Icon(Icons.key, color: Colors.brown, size: 20),
+                        const SizedBox(width: 8),
+                        Text(
+                          'Tu PIN de entrega: ${tx.codigoVerificacionEntrega}',
+                          style: const TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 16,
+                            color: Colors.brown,
+                            letterSpacing: 1.5,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 6),
+                    const Text(
+                      'Proporciona este PIN de 4 dígitos verbalmente al entregador al momento de recibir el libro.',
+                      style: TextStyle(fontSize: 12, color: Colors.black87),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+            if (isPending && isEntregador)
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  const Expanded(
+                    child: Row(
+                      children: [
+                        Icon(
+                          Icons.info_outline,
+                          size: 16,
+                          color: AppColors.textSecondary,
+                        ),
+                        SizedBox(width: 6),
+                        Expanded(
+                          child: Text(
+                            'Pide el PIN al solicitante al entregar el libro',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: AppColors.textSecondary,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
                   ElevatedButton.icon(
                     icon: const Icon(Icons.check_circle_outline, size: 16),
-                    label: const Text('Validar PIN'),
+                    label: const Text('Confirmar Entrega'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppColors.primary,
+                      foregroundColor: Colors.white,
+                    ),
                     onPressed: onConfirmDelivery,
                   ),
-                if (isCompleted && onRate != null)
-                  OutlinedButton.icon(
-                    icon: const Icon(Icons.star_rounded, color: Colors.amber, size: 18),
-                    label: const Text('Calificar Compañero'),
-                    onPressed: onRate,
+                ],
+              ),
+            if (isCompleted) ...[
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  const Text(
+                    '✓ Entrega completada',
+                    style: TextStyle(
+                      color: AppColors.success,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 13,
+                    ),
                   ),
-              ],
-            ),
+                  if (evaluation == null && onRate != null)
+                    OutlinedButton.icon(
+                      icon: const Icon(
+                        Icons.star_rounded,
+                        color: Colors.amber,
+                        size: 18,
+                      ),
+                      label: const Text('Calificar Compañero'),
+                      onPressed: onRate,
+                    ),
+                  if (evaluation != null)
+                    Text(
+                      evaluation['estado'] == 'OMITIDA'
+                          ? 'Calificación omitida'
+                          : 'Tu puntaje: ${evaluation['puntuacion'] ?? '-'} / 5',
+                      style: const TextStyle(
+                        fontSize: 12,
+                        color: AppColors.textSecondary,
+                      ),
+                    ),
+                ],
+              ),
+            ],
           ],
         ),
       ),
@@ -523,7 +807,10 @@ class _EmptyState extends StatelessWidget {
             Text(
               message,
               textAlign: TextAlign.center,
-              style: const TextStyle(color: AppColors.textSecondary, fontSize: 15),
+              style: const TextStyle(
+                color: AppColors.textSecondary,
+                fontSize: 15,
+              ),
             ),
           ],
         ),

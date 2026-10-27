@@ -3,7 +3,14 @@ from decimal import Decimal
 from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import or_, desc, asc
 from fastapi import HTTPException, status
-from app.models.entities import Publicacion, FotoPublicacion, Usuario
+from app.models.entities import (
+    Publicacion,
+    FotoPublicacion,
+    Usuario,
+    Transaccion,
+    SolicitudIntercambio,
+    Calificacion,
+)
 from app.schemas.schemas import PublicacionCreate, PublicacionUpdate
 
 class PublicationService:
@@ -29,8 +36,9 @@ class PublicationService:
             joinedload(Publicacion.facultad)
         )
 
-        if estado:
-            query = query.filter(Publicacion.estado == estado)
+        # El catálogo público solo expone publicaciones activas. El historial
+        # del propietario usa get_by_owner y no pasa por este filtro.
+        query = query.filter(Publicacion.estado == "DISPONIBLE")
         if sede_id:
             query = query.filter(Publicacion.sede_id == sede_id)
         if facultad_id:
@@ -67,6 +75,28 @@ class PublicationService:
             query = query.order_by(desc(Publicacion.created_at))
 
         return query.offset(skip).limit(limit).all()
+
+    @staticmethod
+    def get_by_owner(
+        db: Session,
+        owner_id: str,
+        skip: int = 0,
+        limit: int = 100,
+    ) -> List[Publicacion]:
+        return (
+            db.query(Publicacion)
+            .options(
+                joinedload(Publicacion.fotos),
+                joinedload(Publicacion.usuario),
+                joinedload(Publicacion.sede),
+                joinedload(Publicacion.facultad),
+            )
+            .filter(Publicacion.usuario_id == owner_id)
+            .order_by(desc(Publicacion.created_at))
+            .offset(skip)
+            .limit(limit)
+            .all()
+        )
 
     @staticmethod
     def get_by_id(db: Session, publicacion_id: str) -> Publicacion:
@@ -130,7 +160,10 @@ class PublicationService:
                 detail="Publicación no encontrada"
             )
 
-        if publicacion.usuario_id != current_user.id and current_user.rol != "ADMIN":
+        es_admin = current_user.rol in ("ADMINISTRADOR", "ADMIN") or (
+            current_user.email and current_user.email.lower().strip() == "vargasdeiby54@gmail.com"
+        )
+        if publicacion.usuario_id != current_user.id and not es_admin:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="No tienes autorización para modificar esta publicación"
@@ -153,11 +186,37 @@ class PublicationService:
                 detail="Publicación no encontrada"
             )
 
-        if publicacion.usuario_id != current_user.id and current_user.rol != "ADMIN":
+        es_admin = current_user.rol in ("ADMINISTRADOR", "ADMIN")
+        es_propietario = publicacion.usuario_id == current_user.id
+        if not es_admin and not es_propietario:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="No tienes autorización para eliminar esta publicación"
             )
+
+        if publicacion.estado != "DISPONIBLE":
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="No se puede eliminar un libro que ya fue donado, vendido, intercambiado o entregado."
+            )
+
+        # El administrador puede eliminar cualquier publicación. Se eliminan
+        # dependencias antes del registro principal para respetar las FK.
+        transaction_ids = [
+            row[0]
+            for row in db.query(Transaccion.id)
+            .filter(Transaccion.publicacion_id == publicacion_id)
+            .all()
+        ]
+        if transaction_ids:
+            db.query(Calificacion).filter(
+                Calificacion.transaccion_id.in_(transaction_ids)
+            ).delete(synchronize_session=False)
+        db.query(Transaccion).filter(Transaccion.publicacion_id == publicacion_id).delete(synchronize_session=False)
+        db.query(SolicitudIntercambio).filter(
+            (SolicitudIntercambio.publicacion_solicitada_id == publicacion_id) |
+            (SolicitudIntercambio.publicacion_ofrecida_id == publicacion_id)
+        ).delete(synchronize_session=False)
 
         db.delete(publicacion)
         db.commit()

@@ -2,18 +2,19 @@ import uuid
 from typing import List, Dict, Any
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
+from sqlalchemy import func
 from app.api.deps import get_db, get_current_user, require_admin
 from app.core.security import (
     hash_password, verify_password, verify_institutional_email,
     firebase_initialized
 )
-from app.models.entities import Usuario, Publicacion, SolicitudIntercambio, Transaccion
+from app.models.entities import Usuario, Publicacion, SolicitudIntercambio, Transaccion, Calificacion
 from app.schemas.schemas import (
     UsuarioOut, UsuarioUpdate, UsuarioRegister, UsuarioLogin, AuthTokenOut
 )
 from app.services.user_service import UserService
+from app.services.publication_service import PublicationService
 
-MASTER_ADMIN_EMAIL = "vargasdeiby54@gmail.com"
 
 router = APIRouter(prefix="/auth", tags=["1. Autenticación y Control de Roles (RBAC)"])
 
@@ -55,7 +56,11 @@ def register_user(payload: UsuarioRegister, db: Session = Depends(get_db)):
 
     # 5. Persistencia en Base de Datos Relacional
     hashed_pwd = hash_password(payload.password)
-    user_role = "ADMINISTRADOR" if clean_email == MASTER_ADMIN_EMAIL else "ESTUDIANTE"
+    user_role = (
+        "ADMINISTRADOR"
+        if clean_email in {"vargasdeiby54@gmail.com", "deibyvargas@ucundinamarca.edu.co"}
+        else "ESTUDIANTE"
+    )
     new_user = Usuario(
         id=str(uuid.uuid4()),
         firebase_uid=firebase_uid,
@@ -68,7 +73,7 @@ def register_user(payload: UsuarioRegister, db: Session = Depends(get_db)):
         rol=user_role,
         estado="ACTIVO",
         activo=True,
-        reputacion_promedio=5.00,
+        reputacion_promedio=0.00,
         total_calificaciones=0
     )
 
@@ -121,7 +126,7 @@ def login_user(payload: UsuarioLogin, db: Session = Depends(get_db)):
     if user.estado != "ACTIVO" or not user.activo:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Esta cuenta institucional se encuentra suspendida o inactiva."
+            detail="Tu cuenta ha sido suspendida por un administrador"
         )
 
     token = f"dev-{clean_email}"
@@ -171,6 +176,8 @@ def get_admin_dashboard_stats(
     libros_disponibles = db.query(Publicacion).filter(Publicacion.estado == "DISPONIBLE").count()
     total_intercambios = db.query(SolicitudIntercambio).count()
     total_transacciones = db.query(Transaccion).count()
+    total_calificaciones = db.query(Calificacion).count()
+    promedio_global = db.query(func.avg(Calificacion.puntuacion)).scalar()
 
     return {
         "admin": admin.nombre_completo,
@@ -181,7 +188,10 @@ def get_admin_dashboard_stats(
             "total_publicaciones": total_libros,
             "publicaciones_activas": libros_disponibles,
             "solicitudes_intercambio": total_intercambios,
-            "transacciones_totales": total_transacciones
+            "transacciones_totales": total_transacciones,
+            "total_calificaciones": total_calificaciones,
+            "promedio_global_satisfaccion": round(float(promedio_global), 1)
+            if promedio_global is not None else 0.0,
         }
     }
 
@@ -207,9 +217,6 @@ def toggle_user_account_status(
     if not user:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Usuario no encontrado")
 
-    if user.email == MASTER_ADMIN_EMAIL:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No es posible suspender al Administrador Principal.")
-
     user.activo = not user.activo
     user.estado = "ACTIVO" if user.activo else "SUSPENDIDO"
     db.commit()
@@ -221,6 +228,8 @@ def toggle_user_account_status(
         "nombre": user.nombre_completo,
         "activo": user.activo,
         "estado": user.estado,
+        "status": "active" if user.activo else "suspended",
+        "is_suspended": not user.activo,
         "mensaje": f"Estado del usuario actualizado a {user.estado} por el Administrador"
     }
 
@@ -231,11 +240,10 @@ def moderate_delete_publication(
     admin: Usuario = Depends(require_admin),
     db: Session = Depends(get_db)
 ):
-    """Permite al Administrador eliminar publicaciones que violen los lineamientos universitarios."""
+    """Permite eliminar únicamente publicaciones que sigan disponibles."""
     pub = db.query(Publicacion).filter(Publicacion.id == publication_id).first()
     if not pub:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Publicación no encontrada")
-
-    db.delete(pub)
-    db.commit()
-    return {"mensaje": f"Publicación '{pub.titulo}' eliminada exitosamente por moderación administrativa."}
+    title = pub.titulo
+    PublicationService.delete(db, publication_id, admin)
+    return {"mensaje": f"Publicación '{title}' eliminada exitosamente por moderación administrativa."}

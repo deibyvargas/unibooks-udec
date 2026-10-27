@@ -3,7 +3,7 @@ from decimal import Decimal
 from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import func
 from fastapi import HTTPException, status
-from app.models.entities import Calificacion, Transaccion, Usuario, Notificacion
+from app.models.entities import Calificacion, Transaccion, Usuario, Notificacion, EvaluacionEntrega
 from app.schemas.schemas import CalificacionCreate
 
 class RatingService:
@@ -22,6 +22,13 @@ class RatingService:
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Solo es posible calificar transacciones con estado 'COMPLETADA'"
             )
+
+        evaluacion = db.query(EvaluacionEntrega).filter(
+            EvaluacionEntrega.transaccion_id == transaccion.id,
+            EvaluacionEntrega.evaluador_id == current_user.id,
+        ).first()
+        if evaluacion and evaluacion.estado != "PENDIENTE":
+            raise HTTPException(status_code=400, detail="Esta entrega ya fue evaluada u omitida")
 
         if current_user.id == transaccion.vendedor_id:
             evaluado_id = transaccion.comprador_id
@@ -48,14 +55,19 @@ class RatingService:
         )
         db.add(nueva_calificacion)
         db.flush()
+        if evaluacion:
+            evaluacion.estado = "COMPLETADA"
+            evaluacion.calificacion_id = nueva_calificacion.id
 
         # Recalcular reputación atómicamente
         avg_score = db.query(func.avg(Calificacion.puntuacion)).filter(Calificacion.evaluado_id == evaluado_id).scalar()
         total_reviews = db.query(func.count(Calificacion.id)).filter(Calificacion.evaluado_id == evaluado_id).scalar()
 
         usuario_evaluado = db.query(Usuario).filter(Usuario.id == evaluado_id).first()
-        if usuario_evaluado and avg_score is not None:
-            usuario_evaluado.reputacion_promedio = Decimal(str(round(avg_score, 2)))
+        if usuario_evaluado:
+            usuario_evaluado.reputacion_promedio = Decimal(
+                str(round(float(avg_score), 1) if avg_score is not None else 0.0)
+            )
             usuario_evaluado.total_calificaciones = int(total_reviews)
 
         notif = Notificacion(
@@ -70,6 +82,19 @@ class RatingService:
         db.commit()
         db.refresh(nueva_calificacion)
         return nueva_calificacion
+
+    @staticmethod
+    def skip_rating(db: Session, transaction_id: str, current_user: Usuario) -> None:
+        evaluation = db.query(EvaluacionEntrega).filter(
+            EvaluacionEntrega.transaccion_id == transaction_id,
+            EvaluacionEntrega.evaluador_id == current_user.id,
+        ).first()
+        if not evaluation:
+            raise HTTPException(status_code=404, detail="Evaluación de entrega no encontrada")
+        if evaluation.estado != "PENDIENTE":
+            raise HTTPException(status_code=400, detail="Esta entrega ya fue evaluada u omitida")
+        evaluation.estado = "OMITIDA"
+        db.commit()
 
     @staticmethod
     def get_by_user(db: Session, usuario_id: str) -> List[Calificacion]:

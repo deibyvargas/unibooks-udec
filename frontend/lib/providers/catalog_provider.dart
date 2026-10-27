@@ -1,5 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+
 import '../models/institutional_model.dart';
 import '../models/publication_model.dart';
 
@@ -43,14 +45,62 @@ class CatalogProvider extends ChangeNotifier {
       } else {
         // Catálogo predeterminado de Sedes UDEC en la nube
         _sedes = [
-          SedeModel(id: '11111111-1111-1111-1111-111111111101', nombre: 'Sede Fusagasugá (Principal)', ciudad: 'Fusagasugá', direccion: 'Diagonal 18 No. 20-29', activo: true),
-          SedeModel(id: '11111111-1111-1111-1111-111111111102', nombre: 'Seccional Girardot', ciudad: 'Girardot', direccion: 'Carrera 19 No. 24-209', activo: true),
-          SedeModel(id: '11111111-1111-1111-1111-111111111103', nombre: 'Seccional Ubaté', ciudad: 'Ubaté', direccion: 'Calle 6 No. 9-80', activo: true),
-          SedeModel(id: '11111111-1111-1111-1111-111111111104', nombre: 'Extensión Facatativá', ciudad: 'Facatativá', direccion: 'Calle 8 No. 5-80', activo: true),
-          SedeModel(id: '11111111-1111-1111-1111-111111111105', nombre: 'Extensión Chía', ciudad: 'Chía', direccion: 'Autopista Norte Km 20', activo: true),
-          SedeModel(id: '11111111-1111-1111-1111-111111111106', nombre: 'Extensión Soacha', ciudad: 'Soacha', direccion: 'Carrera 7 No. 13-35', activo: true),
-          SedeModel(id: '11111111-1111-1111-1111-111111111107', nombre: 'Extensión Chocontá', ciudad: 'Chocontá', direccion: 'Carrera 4 No. 5-30', activo: true),
-          SedeModel(id: '11111111-1111-1111-1111-111111111108', nombre: 'Extensión Zipaquirá', ciudad: 'Zipaquirá', direccion: 'Carrera 7 No. 1-35', activo: true),
+          SedeModel(
+            id: '11111111-1111-1111-1111-111111111101',
+            nombre: 'Sede Fusagasugá (Principal)',
+            ciudad: 'Fusagasugá',
+            direccion: 'Diagonal 18 No. 20-29',
+            activo: true,
+          ),
+          SedeModel(
+            id: '11111111-1111-1111-1111-111111111102',
+            nombre: 'Seccional Girardot',
+            ciudad: 'Girardot',
+            direccion: 'Carrera 19 No. 24-209',
+            activo: true,
+          ),
+          SedeModel(
+            id: '11111111-1111-1111-1111-111111111103',
+            nombre: 'Seccional Ubaté',
+            ciudad: 'Ubaté',
+            direccion: 'Calle 6 No. 9-80',
+            activo: true,
+          ),
+          SedeModel(
+            id: '11111111-1111-1111-1111-111111111104',
+            nombre: 'Extensión Facatativá',
+            ciudad: 'Facatativá',
+            direccion: 'Calle 8 No. 5-80',
+            activo: true,
+          ),
+          SedeModel(
+            id: '11111111-1111-1111-1111-111111111105',
+            nombre: 'Extensión Chía',
+            ciudad: 'Chía',
+            direccion: 'Autopista Norte Km 20',
+            activo: true,
+          ),
+          SedeModel(
+            id: '11111111-1111-1111-1111-111111111106',
+            nombre: 'Extensión Soacha',
+            ciudad: 'Soacha',
+            direccion: 'Carrera 7 No. 13-35',
+            activo: true,
+          ),
+          SedeModel(
+            id: '11111111-1111-1111-1111-111111111107',
+            nombre: 'Extensión Chocontá',
+            ciudad: 'Chocontá',
+            direccion: 'Carrera 4 No. 5-30',
+            activo: true,
+          ),
+          SedeModel(
+            id: '11111111-1111-1111-1111-111111111108',
+            nombre: 'Extensión Zipaquirá',
+            ciudad: 'Zipaquirá',
+            direccion: 'Carrera 7 No. 1-35',
+            activo: true,
+          ),
         ];
       }
 
@@ -64,15 +114,34 @@ class CatalogProvider extends ChangeNotifier {
       } else {
         // Catálogo predeterminado de Facultades UDEC
         _facultades = [
-          FacultadModel(id: '22222222-2222-2222-2222-222222222201', nombre: 'Facultad de Ingeniería', sigla: 'FING'),
-          FacultadModel(id: '22222222-2222-2222-2222-222222222202', nombre: 'Facultad de Ciencias Agropecuarias', sigla: 'FCA'),
-          FacultadModel(id: '22222222-2222-2222-2222-222222222203', nombre: 'Facultad de Ciencias Administrativas, Económicas y Contables', sigla: 'FCAEC'),
-          FacultadModel(id: '22222222-2222-2222-2222-222222222204', nombre: 'Facultad de Ciencias de la Salud', sigla: 'FCS'),
+          FacultadModel(
+            id: '22222222-2222-2222-2222-222222222201',
+            nombre: 'Facultad de Ingeniería',
+            sigla: 'FING',
+          ),
+          FacultadModel(
+            id: '22222222-2222-2222-2222-222222222202',
+            nombre: 'Facultad de Ciencias Agropecuarias',
+            sigla: 'FCA',
+          ),
+          FacultadModel(
+            id: '22222222-2222-2222-2222-222222222203',
+            nombre:
+                'Facultad de Ciencias Administrativas, Económicas y Contables',
+            sigla: 'FCAEC',
+          ),
+          FacultadModel(
+            id: '22222222-2222-2222-2222-222222222204',
+            nombre: 'Facultad de Ciencias de la Salud',
+            sigla: 'FCS',
+          ),
         ];
       }
       notifyListeners();
     } catch (e) {
-      debugPrint('[CatalogProvider] Error cargando sedes/facultades de Firestore: $e');
+      debugPrint(
+        '[CatalogProvider] Error cargando sedes/facultades de Firestore: $e',
+      );
     }
   }
 
@@ -98,18 +167,26 @@ class CatalogProvider extends ChangeNotifier {
         return PublicacionModel.fromJson(data);
       }).toList();
 
+      // Solo mostrar libros disponibles en el catálogo público activo
+      final activeItems = allItems
+          .where((p) => p.estado == 'DISPONIBLE')
+          .toList();
+
       // Filtrado por búsqueda en cliente
       if (_searchQuery.trim().isNotEmpty) {
         final q = _searchQuery.trim().toLowerCase();
-        _publications = allItems.where((p) {
+        _publications = activeItems.where((p) {
           final t = p.titulo.toLowerCase();
           final a = p.autor.toLowerCase();
           final m = (p.materia ?? '').toLowerCase();
           final d = p.descripcion.toLowerCase();
-          return t.contains(q) || a.contains(q) || m.contains(q) || d.contains(q);
+          return t.contains(q) ||
+              a.contains(q) ||
+              m.contains(q) ||
+              d.contains(q);
         }).toList();
       } else {
-        _publications = allItems;
+        _publications = activeItems;
       }
     } catch (e) {
       _errorMessage = e.toString();
@@ -141,6 +218,26 @@ class CatalogProvider extends ChangeNotifier {
     notifyListeners();
 
     try {
+      // Verificación de seguridad: Impedir publicar si la cuenta está suspendida
+      final currentUser = FirebaseAuth.instance.currentUser;
+      if (currentUser != null) {
+        final userDoc = await _firestore
+            .collection('usuarios')
+            .doc(currentUser.uid)
+            .get();
+        final uData = userDoc.data() ?? {};
+        final bool isSuspended =
+            uData['estado'] == 'SUSPENDIDO' ||
+            uData['status'] == 'suspended' ||
+            uData['is_suspended'] == true ||
+            uData['activo'] == false;
+
+        if (isSuspended) {
+          _errorMessage = 'Tu cuenta ha sido suspendida por un administrador';
+          throw Exception('Tu cuenta ha sido suspendida por un administrador');
+        }
+      }
+
       final docRef = _firestore.collection('publicaciones').doc();
       final data = Map<String, dynamic>.from(body);
       data['id'] = docRef.id;
@@ -154,11 +251,90 @@ class CatalogProvider extends ChangeNotifier {
       await batch.commit();
 
       await loadCatalog();
-      debugPrint('[DEBUG] [CatalogProvider] Publicación creada exitosamente en Cloud Firestore.');
+      debugPrint(
+        '[DEBUG] [CatalogProvider] Publicación creada exitosamente en Cloud Firestore.',
+      );
+      return true;
+    } catch (e) {
+      _errorMessage = e.toString().replaceAll('Exception: ', '');
+      debugPrint('[DEBUG] [CatalogProvider] Error en createPublication: $e');
+      return false;
+    } finally {
+      _isLoading = false;
+      notifyListeners();
+    }
+  }
+
+  void removeLocalPublication(String publicationId) {
+    _publications.removeWhere((p) => p.id == publicationId);
+    notifyListeners();
+  }
+
+  /// Elimina una publicación de libro de la base de datos y cancela solicitudes asociadas
+  Future<bool> deletePublication(String publicationId) async {
+    _isLoading = true;
+    _errorMessage = null;
+    notifyListeners();
+
+    try {
+      final publication = await _firestore
+          .collection('publicaciones')
+          .doc(publicationId)
+          .get();
+      final publicationState = (publication.data()?['estado'] ?? 'DISPONIBLE')
+          .toString()
+          .toUpperCase()
+          .trim();
+      if (publicationState != 'DISPONIBLE') {
+        _errorMessage =
+            'No se puede eliminar un libro que ya fue donado, vendido o intercambiado.';
+        _isLoading = false;
+        notifyListeners();
+        return false;
+      }
+
+      final batch = _firestore.batch();
+      batch.delete(_firestore.collection('publicaciones').doc(publicationId));
+      batch.delete(_firestore.collection('libros').doc(publicationId));
+
+      // Limpiar solicitudes de intercambio vinculadas como libro solicitado
+      final tradesSnap = await _firestore
+          .collection('solicitudes_intercambio')
+          .where('publicacion_solicitada_id', isEqualTo: publicationId)
+          .get();
+      for (final doc in tradesSnap.docs) {
+        batch.delete(doc.reference);
+      }
+
+      // Limpiar solicitudes de intercambio donde este libro fue ofrecido en trueque
+      final offeredSnap = await _firestore
+          .collection('solicitudes_intercambio')
+          .where('publicacion_ofrecida_id', isEqualTo: publicationId)
+          .get();
+      for (final doc in offeredSnap.docs) {
+        batch.delete(doc.reference);
+      }
+
+      // Limpiar transacciones pendientes vinculadas a este libro
+      final txSnap = await _firestore
+          .collection('transacciones')
+          .where('publicacion_id', isEqualTo: publicationId)
+          .get();
+      for (final doc in txSnap.docs) {
+        batch.delete(doc.reference);
+      }
+
+      await batch.commit();
+
+      // Actualizar la lista en pantalla inmediatamente sin recargar la página
+      removeLocalPublication(publicationId);
+
+      // Carga en segundo plano para sincronizar cualquier filtro
+      loadCatalog();
       return true;
     } catch (e) {
       _errorMessage = e.toString();
-      debugPrint('[DEBUG] [CatalogProvider] Error en createPublication: $e');
+      debugPrint('[CatalogProvider] Error al eliminar publicación: $e');
       return false;
     } finally {
       _isLoading = false;

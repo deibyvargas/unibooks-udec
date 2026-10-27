@@ -79,6 +79,7 @@ EXCEPTION WHEN duplicate_object THEN null; END $$;
 
 DO $$ BEGIN
     CREATE TYPE estado_transaccion_enum AS ENUM (
+        'SOLICITUD_PENDIENTE',
         'PENDIENTE_ENCUENTRO',
         'CONFIRMADA_POR_VENDEDOR',
         'CONFIRMADA_POR_COMPRADOR',
@@ -170,7 +171,7 @@ CREATE TABLE IF NOT EXISTS usuarios (
     rol rol_usuario_enum NOT NULL DEFAULT 'ESTUDIANTE',
     estado estado_usuario_enum NOT NULL DEFAULT 'ACTIVO',
     activo BOOLEAN NOT NULL DEFAULT TRUE,
-    reputacion_promedio NUMERIC(3,2) NOT NULL DEFAULT 5.00 CHECK (reputacion_promedio >= 1.00 AND reputacion_promedio <= 5.00),
+    reputacion_promedio NUMERIC(3,1) NOT NULL DEFAULT 0.0 CHECK (reputacion_promedio >= 0.0 AND reputacion_promedio <= 5.0),
     total_calificaciones INT NOT NULL DEFAULT 0 CHECK (total_calificaciones >= 0),
     biografia VARCHAR(300),
     created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -275,6 +276,18 @@ CREATE TABLE IF NOT EXISTS calificaciones (
     CONSTRAINT uq_transaccion_evaluador UNIQUE (transaccion_id, evaluador_id)
 );
 
+-- Registro persistente de calificación u omisión, una sola vez por participante.
+CREATE TABLE IF NOT EXISTS evaluaciones_entrega (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    transaccion_id UUID NOT NULL REFERENCES transacciones(id) ON DELETE CASCADE,
+    evaluador_id UUID NOT NULL REFERENCES usuarios(id) ON DELETE CASCADE,
+    estado VARCHAR(15) NOT NULL DEFAULT 'PENDIENTE'
+        CHECK (estado IN ('PENDIENTE', 'COMPLETADA', 'OMITIDA')),
+    calificacion_id UUID REFERENCES calificaciones(id) ON DELETE SET NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT uq_evaluacion_entrega_usuario UNIQUE (transaccion_id, evaluador_id)
+);
+
 -- 11. TABLA DE CONVERSACIONES Y MENSAJES DE CONTACTO
 CREATE TABLE IF NOT EXISTS conversaciones (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -348,7 +361,7 @@ RETURNS TRIGGER AS $$
 BEGIN
     UPDATE usuarios
     SET 
-        reputacion_promedio = ROUND((SELECT AVG(puntuacion)::NUMERIC FROM calificaciones WHERE evaluado_id = NEW.evaluado_id), 2),
+        reputacion_promedio = COALESCE(ROUND((SELECT AVG(puntuacion)::NUMERIC FROM calificaciones WHERE evaluado_id = NEW.evaluado_id), 1), 0.0),
         total_calificaciones = (SELECT COUNT(*)::INT FROM calificaciones WHERE evaluado_id = NEW.evaluado_id)
     WHERE id = NEW.evaluado_id;
     RETURN NEW;

@@ -66,6 +66,16 @@ class BookService {
       throw Exception('Debes iniciar sesión para publicar un libro.');
     }
 
+    final userDoc = await _firestore.collection('usuarios').doc(user.uid).get();
+    final uData = userDoc.data() ?? {};
+    final bool isSuspended = uData['estado'] == 'SUSPENDIDO' ||
+        uData['status'] == 'suspended' ||
+        uData['is_suspended'] == true ||
+        uData['activo'] == false;
+    if (isSuspended) {
+      throw Exception('Tu cuenta ha sido suspendida por un administrador');
+    }
+
     final docRef = _firestore.collection('libros').doc();
     final nowIso = DateTime.now().toIso8601String();
 
@@ -150,11 +160,42 @@ class BookService {
     return await _firestore.collection('libros').doc(libroId).get();
   }
 
-  /// Elimina una publicación de libro en Firestore
+  /// Elimina una publicación de libro en Firestore y cancela solicitudes asociadas
   Future<void> eliminarLibro(String libroId) async {
+    final doc = await _firestore.collection('publicaciones').doc(libroId).get();
+    final estado = (doc.data()?['estado'] ?? 'DISPONIBLE').toString().toUpperCase().trim();
+    if (estado != 'DISPONIBLE') {
+      throw Exception('No se puede eliminar un libro que ya fue donado, vendido o intercambiado.');
+    }
+
     final batch = _firestore.batch();
     batch.delete(_firestore.collection('libros').doc(libroId));
     batch.delete(_firestore.collection('publicaciones').doc(libroId));
+
+    final tradesSnap = await _firestore
+        .collection('solicitudes_intercambio')
+        .where('publicacion_solicitada_id', isEqualTo: libroId)
+        .get();
+    for (final doc in tradesSnap.docs) {
+      batch.delete(doc.reference);
+    }
+
+    final offeredSnap = await _firestore
+        .collection('solicitudes_intercambio')
+        .where('publicacion_ofrecida_id', isEqualTo: libroId)
+        .get();
+    for (final doc in offeredSnap.docs) {
+      batch.delete(doc.reference);
+    }
+
+    final txSnap = await _firestore
+        .collection('transacciones')
+        .where('publicacion_id', isEqualTo: libroId)
+        .get();
+    for (final doc in txSnap.docs) {
+      batch.delete(doc.reference);
+    }
+
     await batch.commit();
   }
 }

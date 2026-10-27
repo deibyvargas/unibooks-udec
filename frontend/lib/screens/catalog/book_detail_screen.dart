@@ -1,15 +1,15 @@
-import 'dart:math';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart' hide AuthProvider;
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
+
 import '../../core/constants/app_colors.dart';
 import '../../models/institutional_model.dart';
 import '../../models/publication_model.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/trade_provider.dart';
 import '../../providers/chat_provider.dart';
+import '../../providers/catalog_provider.dart';
 import '../chat/chat_detail_screen.dart';
 import '../../widgets/app_network_image.dart';
 
@@ -68,6 +68,19 @@ class _BookDetailScreenState extends State<BookDetailScreen> {
   }
 
   Future<void> _iniciarChatConVendedor() async {
+    final auth = context.read<AuthProvider>();
+    if (auth.currentUser == null ||
+        auth.currentUser!.isSuspended ||
+        !auth.currentUser!.isActivo) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Tu cuenta ha sido suspendida por un administrador'),
+          backgroundColor: AppColors.danger,
+        ),
+      );
+      return;
+    }
+
     final book = _book;
     if (book == null || book.usuario == null) return;
 
@@ -80,76 +93,150 @@ class _BookDetailScreenState extends State<BookDetailScreen> {
     if (mounted && conv != null) {
       Navigator.push(
         context,
-        MaterialPageRoute(
-          builder: (_) => ChatDetailScreen(conversacion: conv),
-        ),
+        MaterialPageRoute(builder: (_) => ChatDetailScreen(conversacion: conv)),
       );
     }
   }
 
-  void _showTradeProposalDialog() {
+  Future<void> _showTradeProposalDialog() async {
+    final auth = context.read<AuthProvider>();
+    if (auth.currentUser == null ||
+        auth.currentUser!.isSuspended ||
+        !auth.currentUser!.isActivo) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Tu cuenta ha sido suspendida por un administrador'),
+          backgroundColor: AppColors.danger,
+        ),
+      );
+      return;
+    }
+
     final messageController = TextEditingController();
+    final uid = auth.currentUser!.firebaseUid.isNotEmpty
+        ? auth.currentUser!.firebaseUid
+        : auth.currentUser!.id;
+    final availableBooks = <Map<String, dynamic>>[];
+    try {
+      final snapshot = await FirebaseFirestore.instance
+          .collection('publicaciones')
+          .where('usuario_id', isEqualTo: uid)
+          .get();
+      for (final doc in snapshot.docs) {
+        final data = Map<String, dynamic>.from(doc.data());
+        if (doc.id != widget.bookId && data['estado'] == 'DISPONIBLE') {
+          data['id'] = doc.id;
+          availableBooks.add(data);
+        }
+      }
+    } catch (_) {
+      // The proposal may omit an offered book if the catalogue cannot be loaded.
+    }
+
+    if (!mounted) return;
 
     showDialog(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Proponer Intercambio de Libro'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Libro de interés: ${_book?.titulo}',
-              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
-            ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: messageController,
-              maxLines: 3,
-              decoration: const InputDecoration(
-                hintText: 'Describe el libro que ofreces o tu propuesta...',
-                labelText: 'Mensaje de propuesta institucional',
-              ),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('Cancelar'),
-          ),
-          ElevatedButton(
-            onPressed: () async {
-              final msg = messageController.text.trim();
-              if (msg.isEmpty) return;
-              Navigator.pop(ctx);
-
-              final success = await context.read<TradeProvider>().proposeTrade(
-                publicacionSolicitadaId: widget.bookId,
-                mensaje: msg,
-              );
-
-              if (mounted) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                    content: Text(
-                      success
-                          ? '¡Propuesta de trueque enviada exitosamente!'
-                          : 'Error al enviar propuesta',
-                    ),
-                    backgroundColor: success ? AppColors.success : AppColors.danger,
+      builder: (ctx) {
+        String? offeredBookId;
+        return StatefulBuilder(
+          builder: (context, setDialogState) => AlertDialog(
+            title: const Text('Proponer Intercambio de Libro'),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Libro de interés: ${_book?.titulo}',
+                  style: const TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 13,
                   ),
-                );
-              }
-            },
-            child: const Text('Enviar Propuesta'),
+                ),
+                const SizedBox(height: 12),
+                DropdownButtonFormField<String>(
+                  value: offeredBookId,
+                  isExpanded: true,
+                  decoration: const InputDecoration(
+                    labelText: 'Libro que ofreces (opcional)',
+                  ),
+                  items: availableBooks.map((book) {
+                    return DropdownMenuItem<String>(
+                      value: book['id'] as String,
+                      child: Text(book['titulo']?.toString() ?? 'Libro'),
+                    );
+                  }).toList(),
+                  onChanged: (value) =>
+                      setDialogState(() => offeredBookId = value),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: messageController,
+                  maxLines: 3,
+                  decoration: const InputDecoration(
+                    hintText: 'Describe el libro que ofreces o tu propuesta...',
+                    labelText: 'Mensaje de propuesta institucional',
+                  ),
+                ),
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: const Text('Cancelar'),
+              ),
+              ElevatedButton(
+                onPressed: () async {
+                  final msg = messageController.text.trim();
+                  if (msg.isEmpty) return;
+                  Navigator.pop(ctx);
+
+                  final success = await context
+                      .read<TradeProvider>()
+                      .proposeTrade(
+                        publicacionSolicitadaId: widget.bookId,
+                        mensaje: msg,
+                        publicacionOfrecidaId: offeredBookId,
+                      );
+
+                  if (mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text(
+                          success
+                              ? '¡Propuesta de trueque enviada exitosamente!'
+                              : 'Error al enviar propuesta',
+                        ),
+                        backgroundColor: success
+                            ? AppColors.success
+                            : AppColors.danger,
+                      ),
+                    );
+                  }
+                },
+                child: const Text('Enviar Propuesta'),
+              ),
+            ],
           ),
-        ],
-      ),
+        );
+      },
     );
   }
 
   void _showReservationDialog() async {
+    final auth = context.read<AuthProvider>();
+    if (auth.currentUser == null ||
+        auth.currentUser!.isSuspended ||
+        !auth.currentUser!.isActivo) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Tu cuenta ha sido suspendida por un administrador'),
+          backgroundColor: AppColors.danger,
+        ),
+      );
+      return;
+    }
+
     if (_book == null) return;
 
     List<PuntoEncuentroModel> puntos = [];
@@ -194,27 +281,36 @@ class _BookDetailScreenState extends State<BookDetailScreen> {
       context: context,
       builder: (ctx) => StatefulBuilder(
         builder: (context, setModalState) => AlertDialog(
-          title: const Text('Reservar Punto Seguro en Campus'),
+          title: const Text('Solicitar adquisición'),
           content: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               const Text(
-                'Selecciona el lugar vigilado dentro del campus para la entrega:',
+                'Selecciona el lugar vigilado. El dueño aprobará la solicitud antes de activar el PIN:',
                 style: TextStyle(fontSize: 13),
               ),
               const SizedBox(height: 12),
               DropdownButtonFormField<String>(
                 value: selectedPuntoId,
                 isExpanded: true,
-                items: puntos.map((p) => DropdownMenuItem(
-                  value: p.id,
-                  child: Text(p.nombre, style: const TextStyle(fontSize: 13)),
-                )).toList(),
+                items: puntos
+                    .map(
+                      (p) => DropdownMenuItem(
+                        value: p.id,
+                        child: Text(
+                          p.nombre,
+                          style: const TextStyle(fontSize: 13),
+                        ),
+                      ),
+                    )
+                    .toList(),
                 onChanged: (val) {
                   if (val != null) setModalState(() => selectedPuntoId = val);
                 },
-                decoration: const InputDecoration(labelText: 'Punto de encuentro seguro'),
+                decoration: const InputDecoration(
+                  labelText: 'Punto de encuentro seguro',
+                ),
               ),
             ],
           ),
@@ -226,51 +322,45 @@ class _BookDetailScreenState extends State<BookDetailScreen> {
             ElevatedButton(
               onPressed: () async {
                 Navigator.pop(ctx);
-                final currentUid = FirebaseAuth.instance.currentUser?.uid;
-                if (currentUid == null) return;
-
                 try {
-                  final pin = (1000 + Random().nextInt(9000)).toString();
-                  final txRef = FirebaseFirestore.instance.collection('transacciones').doc();
-                  await txRef.set({
-                    'id': txRef.id,
-                    'publicacion_id': widget.bookId,
-                    'vendedor_id': _book!.usuarioId,
-                    'comprador_id': currentUid,
-                    'tipo_transaccion': _book!.modalidad == 'INTERCAMBIO' ? 'INTERCAMBIO' : 'VENTA',
-                    'monto_pago': _book!.precio,
-                    'punto_encuentro_id': selectedPuntoId,
-                    'fecha_hora_encuentro': DateTime.now().add(const Duration(days: 2)).toIso8601String(),
-                    'codigo_verificacion_entrega': pin,
-                    'estado': 'PENDIENTE_ENCUENTRO',
-                    'publicacion': _book!.toJson(),
-                    'created_at': DateTime.now().toIso8601String(),
-                  });
-
-                  // Actualizar publicación a RESERVADO
-                  await FirebaseFirestore.instance
-                      .collection('publicaciones')
-                      .doc(widget.bookId)
-                      .update({'estado': 'RESERVADO'});
+                  final success = await context
+                      .read<TradeProvider>()
+                      .requestAcquisition(
+                        publicacionId: widget.bookId,
+                        puntoEncuentroId: selectedPuntoId,
+                        fechaEncuentro: DateTime.now().add(
+                          const Duration(days: 2),
+                        ),
+                        monto: _book!.precio,
+                      );
 
                   if (mounted) {
                     ScaffoldMessenger.of(context).showSnackBar(
                       SnackBar(
-                        content: Text('¡Libro reservado con éxito! Tu PIN de entrega es $pin'),
-                        backgroundColor: AppColors.success,
+                        content: Text(
+                          success
+                              ? 'Solicitud enviada. El dueño debe aprobarla antes de generar el PIN.'
+                              : 'No fue posible enviar la solicitud.',
+                        ),
+                        backgroundColor: success
+                            ? AppColors.success
+                            : AppColors.danger,
                       ),
                     );
-                    _loadBookDetail();
+                    if (success) _loadBookDetail();
                   }
                 } catch (e) {
                   if (mounted) {
                     ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(content: Text('Error: $e'), backgroundColor: AppColors.danger),
+                      SnackBar(
+                        content: Text('Error: $e'),
+                        backgroundColor: AppColors.danger,
+                      ),
                     );
                   }
                 }
               },
-              child: const Text('Confirmar Reserva'),
+              child: const Text('Enviar solicitud'),
             ),
           ],
         ),
@@ -278,9 +368,120 @@ class _BookDetailScreenState extends State<BookDetailScreen> {
     );
   }
 
+  Future<void> _confirmDeleteBookByAdmin(PublicacionModel book) async {
+    final estado = book.estado.toUpperCase().trim();
+    if (estado != 'DISPONIBLE') {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'No se puede eliminar un libro que ya fue donado, vendido o intercambiado.',
+          ),
+          backgroundColor: AppColors.danger,
+        ),
+      );
+      return;
+    }
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Row(
+          children: const [
+            Icon(Icons.warning_amber_rounded, color: Colors.red, size: 28),
+            SizedBox(width: 10),
+            Text(
+              'Eliminar Libro',
+              style: TextStyle(fontWeight: FontWeight.bold),
+            ),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              '¿Estás seguro de que deseas eliminar permanentemente este libro de la plataforma?',
+              style: TextStyle(fontSize: 14),
+            ),
+            const SizedBox(height: 12),
+            Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: Colors.grey.shade100,
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Text(
+                'Título: "${book.titulo}"\nAutor: ${book.autor}',
+                style: const TextStyle(
+                  fontWeight: FontWeight.w600,
+                  fontSize: 13,
+                ),
+              ),
+            ),
+            const SizedBox(height: 10),
+            const Text(
+              'Esta acción no se puede deshacer y cancelará las solicitudes o entregas pendientes asociadas.',
+              style: TextStyle(fontSize: 12, color: Colors.redAccent),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancelar'),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text(
+              'Eliminar definitivamente',
+              style: TextStyle(color: Colors.white),
+            ),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true) return;
+    if (!mounted) return;
+
+    try {
+      final catalogProvider = context.read<CatalogProvider>();
+      final success = await catalogProvider.deletePublication(book.id);
+      if (!mounted) return;
+
+      if (success) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Libro eliminado correctamente'),
+            backgroundColor: AppColors.success,
+          ),
+        );
+        Navigator.pop(context, true);
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Error al eliminar el libro'),
+            backgroundColor: AppColors.danger,
+          ),
+        );
+      }
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error: $e'), backgroundColor: AppColors.danger),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
-    final currencyFormatter = NumberFormat.currency(locale: 'es_CO', symbol: '\$', decimalDigits: 0);
+    final currencyFormatter = NumberFormat.currency(
+      locale: 'es_CO',
+      symbol: '\$',
+      decimalDigits: 0,
+    );
     final currentUser = context.watch<AuthProvider>().currentUser;
 
     if (_isLoading) {
@@ -298,7 +499,10 @@ class _BookDetailScreenState extends State<BookDetailScreen> {
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
               Text(_error ?? 'No se pudo cargar la publicación'),
-              ElevatedButton(onPressed: _loadBookDetail, child: const Text('Reintentar')),
+              ElevatedButton(
+                onPressed: _loadBookDetail,
+                child: const Text('Reintentar'),
+              ),
             ],
           ),
         ),
@@ -311,6 +515,17 @@ class _BookDetailScreenState extends State<BookDetailScreen> {
     return Scaffold(
       appBar: AppBar(
         title: Text(book.titulo, maxLines: 1, overflow: TextOverflow.ellipsis),
+        actions: [
+          if (currentUser?.isAdmin == true && book.estado.toUpperCase().trim() == 'DISPONIBLE')
+            IconButton(
+              icon: const Icon(
+                Icons.delete_forever_rounded,
+                color: Colors.redAccent,
+              ),
+              tooltip: 'Eliminar libro (Admin)',
+              onPressed: () => _confirmDeleteBookByAdmin(book),
+            ),
+        ],
       ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(18),
@@ -322,7 +537,9 @@ class _BookDetailScreenState extends State<BookDetailScreen> {
               child: ClipRRect(
                 borderRadius: BorderRadius.circular(16),
                 child: AppNetworkImage(
-                  url: book.fotos.isNotEmpty && _selectedPhotoIndex < book.fotos.length
+                  url:
+                      book.fotos.isNotEmpty &&
+                          _selectedPhotoIndex < book.fotos.length
                       ? book.fotos[_selectedPhotoIndex].fotoUrl
                       : book.portadaUrl,
                   height: 280,
@@ -331,7 +548,11 @@ class _BookDetailScreenState extends State<BookDetailScreen> {
                   errorWidget: Container(
                     height: 280,
                     color: Colors.grey.shade200,
-                    child: const Icon(Icons.broken_image, size: 64, color: Colors.grey),
+                    child: const Icon(
+                      Icons.broken_image,
+                      size: 64,
+                      color: Colors.grey,
+                    ),
                   ),
                 ),
               ),
@@ -348,11 +569,13 @@ class _BookDetailScreenState extends State<BookDetailScreen> {
                     return GestureDetector(
                       onTap: () => setState(() => _selectedPhotoIndex = i),
                       child: Container(
-                         margin: const EdgeInsets.only(right: 8),
+                        margin: const EdgeInsets.only(right: 8),
                         decoration: BoxDecoration(
                           borderRadius: BorderRadius.circular(8),
                           border: Border.all(
-                            color: isSel ? AppColors.primary : Colors.transparent,
+                            color: isSel
+                                ? AppColors.primary
+                                : Colors.transparent,
                             width: 2,
                           ),
                         ),
@@ -383,12 +606,18 @@ class _BookDetailScreenState extends State<BookDetailScreen> {
                     children: [
                       Text(
                         book.titulo,
-                        style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
+                        style: const TextStyle(
+                          fontSize: 22,
+                          fontWeight: FontWeight.bold,
+                        ),
                       ),
                       const SizedBox(height: 4),
                       Text(
                         'Por ${book.autor}',
-                        style: const TextStyle(fontSize: 16, color: AppColors.textSecondary),
+                        style: const TextStyle(
+                          fontSize: 16,
+                          color: AppColors.textSecondary,
+                        ),
                       ),
                     ],
                   ),
@@ -444,22 +673,32 @@ class _BookDetailScreenState extends State<BookDetailScreen> {
             const SizedBox(height: 6),
             Text(
               book.descripcion,
-              style: const TextStyle(fontSize: 14, height: 1.5, color: AppColors.textPrimary),
+              style: const TextStyle(
+                fontSize: 14,
+                height: 1.5,
+                color: AppColors.textPrimary,
+              ),
             ),
 
-            if (book.interesIntercambio != null && book.interesIntercambio!.isNotEmpty) ...[
+            if (book.interesIntercambio != null &&
+                book.interesIntercambio!.isNotEmpty) ...[
               const SizedBox(height: 16),
               Container(
                 padding: const EdgeInsets.all(14),
                 decoration: BoxDecoration(
                   color: AppColors.badgeTrueque.withOpacity(0.08),
                   borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: AppColors.badgeTrueque.withOpacity(0.3)),
+                  border: Border.all(
+                    color: AppColors.badgeTrueque.withOpacity(0.3),
+                  ),
                 ),
                 child: Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Icon(Icons.swap_horiz_rounded, color: AppColors.badgeTrueque),
+                    const Icon(
+                      Icons.swap_horiz_rounded,
+                      color: AppColors.badgeTrueque,
+                    ),
                     const SizedBox(width: 10),
                     Expanded(
                       child: Column(
@@ -467,7 +706,10 @@ class _BookDetailScreenState extends State<BookDetailScreen> {
                         children: [
                           const Text(
                             'Interés de Trueque del Compañero:',
-                            style: TextStyle(fontWeight: FontWeight.bold, color: AppColors.badgeTrueque),
+                            style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              color: AppColors.badgeTrueque,
+                            ),
                           ),
                           const SizedBox(height: 2),
                           Text(book.interesIntercambio!),
@@ -497,8 +739,13 @@ class _BookDetailScreenState extends State<BookDetailScreen> {
                         radius: 24,
                         backgroundColor: AppColors.primary.withOpacity(0.1),
                         child: Text(
-                          book.usuario!.nombreCompleto.isNotEmpty ? book.usuario!.nombreCompleto[0] : 'U',
-                          style: const TextStyle(fontWeight: FontWeight.bold, color: AppColors.primary),
+                          book.usuario!.nombreCompleto.isNotEmpty
+                              ? book.usuario!.nombreCompleto[0]
+                              : 'U',
+                          style: const TextStyle(
+                            fontWeight: FontWeight.bold,
+                            color: AppColors.primary,
+                          ),
                         ),
                       ),
                       const SizedBox(width: 14),
@@ -508,20 +755,35 @@ class _BookDetailScreenState extends State<BookDetailScreen> {
                           children: [
                             Text(
                               book.usuario!.nombreCompleto,
-                              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
+                              style: const TextStyle(
+                                fontWeight: FontWeight.bold,
+                                fontSize: 15,
+                              ),
                             ),
                             Text(
                               book.usuario!.email,
-                              style: const TextStyle(fontSize: 12, color: AppColors.textSecondary),
+                              style: const TextStyle(
+                                fontSize: 12,
+                                color: AppColors.textSecondary,
+                              ),
                             ),
                             const SizedBox(height: 4),
                             Row(
                               children: [
-                                const Icon(Icons.star_rounded, size: 16, color: Colors.amber),
+                                const Icon(
+                                  Icons.star_rounded,
+                                  size: 16,
+                                  color: Colors.amber,
+                                ),
                                 const SizedBox(width: 4),
                                 Text(
-                                  '${book.usuario!.reputacionPromedio.toStringAsFixed(1)} (${book.usuario!.totalCalificaciones} calificaciones)',
-                                  style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+                                  book.usuario!.totalCalificaciones == 0
+                                      ? 'Sin calificaciones'
+                                      : '${book.usuario!.reputacionPromedio.toStringAsFixed(1)} ★ (${book.usuario!.totalCalificaciones} calificaciones)',
+                                  style: const TextStyle(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.bold,
+                                  ),
                                 ),
                               ],
                             ),
@@ -546,7 +808,9 @@ class _BookDetailScreenState extends State<BookDetailScreen> {
                     backgroundColor: AppColors.primary,
                     foregroundColor: Colors.white,
                     padding: const EdgeInsets.symmetric(vertical: 14),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10),
+                    ),
                   ),
                   icon: const Icon(Icons.chat_bubble_rounded),
                   label: const Text(
@@ -573,7 +837,11 @@ class _BookDetailScreenState extends State<BookDetailScreen> {
                     Expanded(
                       child: ElevatedButton.icon(
                         icon: const Icon(Icons.handshake_rounded),
-                        label: Text(book.esDonacion ? 'Solicitar Donación' : 'Reservar Libro'),
+                        label: Text(
+                          book.esDonacion
+                              ? 'Solicitar Donación'
+                              : 'Adquirir libro',
+                        ),
                         onPressed: _showReservationDialog,
                       ),
                     ),
@@ -590,7 +858,10 @@ class _BookDetailScreenState extends State<BookDetailScreen> {
                 child: const Text(
                   'Esta es tu propia publicación.',
                   textAlign: TextAlign.center,
-                  style: TextStyle(fontWeight: FontWeight.bold, color: Colors.blue),
+                  style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                    color: Colors.blue,
+                  ),
                 ),
               ),
             ] else ...[
@@ -604,7 +875,94 @@ class _BookDetailScreenState extends State<BookDetailScreen> {
                 child: Text(
                   'Este libro actualmente se encuentra: ${book.estado}',
                   textAlign: TextAlign.center,
-                  style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.deepOrange),
+                  style: const TextStyle(
+                    fontWeight: FontWeight.bold,
+                    color: Colors.deepOrange,
+                  ),
+                ),
+              ),
+            ],
+            if (currentUser?.isAdmin == true) ...[
+              const SizedBox(height: 18),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: Colors.red.withOpacity(0.06),
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(color: Colors.red.withOpacity(0.25)),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: const [
+                        Icon(
+                          Icons.admin_panel_settings_rounded,
+                          color: Colors.red,
+                          size: 22,
+                        ),
+                        SizedBox(width: 8),
+                        Text(
+                          'Moderación de Administrador',
+                          style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            color: Colors.red,
+                            fontSize: 14,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    if (book.estado.toUpperCase().trim() == 'DISPONIBLE') ...[
+                      const Text(
+                        'Como Administrador institucional, tienes permisos para dar de baja y eliminar permanentemente cualquier libro de la plataforma.',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: AppColors.textSecondary,
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      ElevatedButton.icon(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.red.shade700,
+                          foregroundColor: Colors.white,
+                          minimumSize: const Size(double.infinity, 42),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                        ),
+                        icon: const Icon(Icons.delete_forever_rounded),
+                        label: const Text('Eliminar libro de la plataforma'),
+                        onPressed: () => _confirmDeleteBookByAdmin(book),
+                      ),
+                    ] else ...[
+                      Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: Colors.grey.shade300),
+                        ),
+                        child: Row(
+                          children: const [
+                            Icon(Icons.lock_outline_rounded, color: AppColors.textSecondary, size: 20),
+                            SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                'Este libro ya fue completado (donado, vendido o intercambiado). Está protegido como parte del historial institucional y no puede ser eliminado.',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  color: AppColors.textSecondary,
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ],
                 ),
               ),
             ],
@@ -643,7 +1001,11 @@ class _DetailBadge extends StatelessWidget {
           const SizedBox(width: 6),
           Text(
             label,
-            style: TextStyle(color: color, fontSize: 12, fontWeight: FontWeight.bold),
+            style: TextStyle(
+              color: color,
+              fontSize: 12,
+              fontWeight: FontWeight.bold,
+            ),
           ),
         ],
       ),

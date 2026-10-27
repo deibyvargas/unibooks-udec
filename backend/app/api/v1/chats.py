@@ -239,3 +239,25 @@ async def upload_chat_media(
         "full_url": full_url
     }
 
+
+@router.delete("/conversaciones/{conversacion_id}/mensajes/{mensaje_id}", status_code=status.HTTP_204_NO_CONTENT, summary="Eliminar un mensaje propio del chat")
+def delete_mensaje(
+    conversacion_id: str,
+    mensaje_id: str,
+    current_user: Usuario = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Permite al remitente eliminar su propio mensaje enviado."""
+    mensaje = db.query(Mensaje).filter(
+        Mensaje.id == mensaje_id,
+        Mensaje.conversacion_id == conversacion_id
+    ).first()
+    if not mensaje:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Mensaje no encontrado")
+
+    if mensaje.remitente_id != current_user.id and current_user.rol not in ("ADMINISTRADOR", "ADMIN"):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Solo puedes eliminar tus propios mensajes")
+
+    db.delete(mensaje)
+    db.commit()
+    return None

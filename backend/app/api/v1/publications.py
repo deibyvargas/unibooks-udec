@@ -40,6 +40,14 @@ def get_publicaciones(
         limit=limit
     )
 
+@router.get("/mine", response_model=List[PublicacionOut], summary="Mis publicaciones e historial")
+def get_my_publicaciones(
+    current_user: Usuario = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Devuelve todas las publicaciones del usuario, incluidas las finalizadas."""
+    return PublicationService.get_by_owner(db, current_user.id)
+
 @router.get("/{publicacion_id}", response_model=PublicacionOut, summary="Obtener detalle de una publicación")
 def get_publicacion_detalle(
     publicacion_id: str,

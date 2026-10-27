@@ -1,5 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+
 import '../models/user_model.dart';
 
 /// Resultado estructurado de las operaciones de autenticación
@@ -25,10 +26,7 @@ class AuthResult {
   }
 
   factory AuthResult.error(String message) {
-    return AuthResult(
-      isSuccess: false,
-      errorMessage: message,
-    );
+    return AuthResult(isSuccess: false, errorMessage: message);
   }
 }
 
@@ -91,7 +89,9 @@ class AuthService {
 
       final firebaseUser = userCredential.user;
       if (firebaseUser == null) {
-        return AuthResult.error('No se pudo inicializar la cuenta en Firebase.');
+        return AuthResult.error(
+          'No se pudo inicializar la cuenta en Firebase.',
+        );
       }
 
       await firebaseUser.updateDisplayName(nombreCompleto.trim());
@@ -110,7 +110,7 @@ class AuthService {
         programaId: programaId,
         rol: rol,
         estado: 'ACTIVO',
-        reputacionPromedio: 5.0,
+        reputacionPromedio: 0.0,
         totalCalificaciones: 0,
       );
 
@@ -157,7 +157,10 @@ class AuthService {
       }
 
       // 3. Cargar perfil desde Cloud Firestore
-      final doc = await _firestore.collection('usuarios').doc(firebaseUser.uid).get();
+      final doc = await _firestore
+          .collection('usuarios')
+          .doc(firebaseUser.uid)
+          .get();
 
       UserModel userModel;
       if (doc.exists && doc.data() != null) {
@@ -172,13 +175,29 @@ class AuthService {
           nombreCompleto: firebaseUser.displayName ?? cleanEmail.split('@')[0],
           rol: rol,
           estado: 'ACTIVO',
-          reputacionPromedio: 5.0,
+          reputacionPromedio: 0.0,
           totalCalificaciones: 0,
         );
         await _firestore
             .collection('usuarios')
             .doc(firebaseUser.uid)
             .set(userModel.toJson());
+      }
+
+      // 4. Verificación de Seguridad: Bloqueo estricto para cuentas suspendidas
+      final data = doc.data() ?? {};
+      final bool isSuspended =
+          userModel.estado == 'SUSPENDIDO' ||
+          data['estado'] == 'SUSPENDIDO' ||
+          data['status'] == 'suspended' ||
+          data['is_suspended'] == true ||
+          data['activo'] == false;
+
+      if (isSuspended) {
+        await _auth.signOut();
+        return AuthResult.error(
+          'Tu cuenta ha sido suspendida por un administrador',
+        );
       }
 
       return AuthResult.success(
@@ -197,7 +216,9 @@ class AuthService {
     try {
       final doc = await _firestore.collection('usuarios').doc(uid).get();
       if (doc.exists && doc.data() != null) {
-        return UserModel.fromJson(doc.data()!);
+        final data = Map<String, dynamic>.from(doc.data()!);
+        data['id'] = doc.id;
+        return UserModel.fromJson(data);
       }
     } catch (_) {}
     return null;
@@ -230,7 +251,8 @@ class AuthService {
       case 'network-request-failed':
         return 'Error de conexión de red. Verifica tus datos móviles o Wi-Fi.';
       default:
-        return e.message ?? 'Ocurrió un error de autenticación con Firebase (${e.code}).';
+        return e.message ??
+            'Ocurrió un error de autenticación con Firebase (${e.code}).';
     }
   }
 }

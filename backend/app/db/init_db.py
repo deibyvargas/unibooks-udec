@@ -1,12 +1,19 @@
 from sqlalchemy.orm import Session
 from app.core.database import engine, Base
 from app.models.entities import (
-    Sede, Facultad, ProgramaAcademico, PuntoEncuentro,
+    Sede, Facultad, ProgramaAcademico, PuntoEncuentro, Usuario,
 )
 
 def init_database():
     """Crea las tablas en la base de datos si no existen."""
     Base.metadata.create_all(bind=engine)
+    # Corrige perfiles creados con el antiguo valor ficticio de 5 estrellas.
+    with Session(bind=engine) as db:
+        db.query(Usuario).filter(
+            Usuario.total_calificaciones == 0,
+            Usuario.reputacion_promedio != 0,
+        ).update({"reputacion_promedio": 0}, synchronize_session=False)
+        db.commit()
 
 def seed_initial_data(db: Session):
     """Carga únicamente catálogos institucionales requeridos por los formularios."""

@@ -10,6 +10,9 @@ import 'providers/chat_provider.dart';
 import 'screens/auth/login_screen.dart';
 import 'screens/auth/register_screen.dart';
 import 'screens/main_navigation_screen.dart';
+import 'screens/admin/admin_dashboard_screen.dart';
+
+import 'core/navigation/app_navigator.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -34,6 +37,7 @@ class UnibooksApp extends StatelessWidget {
       child: MaterialApp(
         title: 'Unibooks - Universidad de Cundinamarca',
         debugShowCheckedModeBanner: false,
+        navigatorKey: AppNavigator.navigatorKey,
         theme: AppTheme.lightTheme,
         initialRoute: '/',
         routes: {
@@ -42,7 +46,7 @@ class UnibooksApp extends StatelessWidget {
           '/login': (context) => const LoginScreen(),
           '/home': (context) => const ProtectedRoute(child: MainNavigationScreen()),
           '/catalog': (context) => const ProtectedRoute(child: MainNavigationScreen()),
-          '/dashboard': (context) => const ProtectedRoute(child: MainNavigationScreen()),
+          '/dashboard': (context) => const ProtectedRoute(child: AdminDashboardScreen()),
         },
         onGenerateRoute: (settings) {
           return MaterialPageRoute(builder: (_) => const AppRootRouter());
@@ -68,8 +72,11 @@ class AppRootRouter extends StatelessWidget {
       );
     }
 
-    // Regla Obligatoria: Si no hay sesión activa, la vista inicial es RegisterScreen
+    // Regla Obligatoria: Si no hay sesión activa, la vista inicial es RegisterScreen (o Login si fue suspendido)
     if (!auth.isAuthenticated) {
+      if (auth.errorMessage != null && auth.errorMessage!.contains('suspendida')) {
+        return const LoginScreen();
+      }
       return const RegisterScreen();
     }
 
@@ -95,6 +102,9 @@ class ProtectedRoute extends StatelessWidget {
     }
 
     if (!auth.isAuthenticated) {
+      if (auth.errorMessage != null && auth.errorMessage!.contains('suspendida')) {
+        return const LoginScreen();
+      }
       return const RegisterScreen();
     }
 

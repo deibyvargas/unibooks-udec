@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
 import '../../core/constants/app_colors.dart';
 import '../../models/publication_model.dart';
+import '../../providers/auth_provider.dart';
 import '../../providers/catalog_provider.dart';
 import 'book_detail_screen.dart';
 import '../publications/create_publication_screen.dart';
@@ -11,9 +12,93 @@ import '../../widgets/app_network_image.dart';
 class CatalogScreen extends StatelessWidget {
   const CatalogScreen({super.key});
 
+  Future<void> _confirmDeleteBook(BuildContext context, PublicacionModel book) async {
+    final estado = book.estado.toUpperCase().trim();
+    if (estado != 'DISPONIBLE') {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'No se puede eliminar un libro que ya fue donado, vendido o intercambiado.',
+          ),
+          backgroundColor: AppColors.danger,
+        ),
+      );
+      return;
+    }
+
+    final bool? confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Row(
+          children: const [
+            Icon(Icons.delete_forever_rounded, color: AppColors.danger),
+            SizedBox(width: 8),
+            Text('Confirmar eliminación de libro'),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              '¿Estás seguro de que deseas eliminar permanentemente "${book.titulo}"?',
+              style: const TextStyle(fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 10),
+            const Text(
+              'Esta acción es irreversible: el libro será retirado del catálogo inmediatamente y se cancelarán '
+              'automáticamente las solicitudes de intercambio y reservas pendientes asociadas.',
+              style: TextStyle(fontSize: 13, color: AppColors.textSecondary),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancelar'),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.danger,
+              foregroundColor: Colors.white,
+            ),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Eliminar libro'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm != true) return;
+    if (!context.mounted) return;
+
+    final success = await context.read<CatalogProvider>().deletePublication(book.id);
+    if (context.mounted) {
+      if (success) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Libro eliminado correctamente'),
+            backgroundColor: AppColors.success,
+          ),
+        );
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              context.read<CatalogProvider>().errorMessage ?? 'Error al eliminar libro',
+            ),
+            backgroundColor: AppColors.danger,
+          ),
+        );
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final catalog = context.watch<CatalogProvider>();
+    final isAdmin = context.watch<AuthProvider>().currentUser?.isAdmin == true;
     final currencyFormatter = NumberFormat.currency(locale: 'es_CO', symbol: '\$', decimalDigits: 0);
 
     return Scaffold(
@@ -240,16 +325,24 @@ class CatalogScreen extends StatelessWidget {
                             itemCount: catalog.publications.length,
                             itemBuilder: (context, index) {
                               final book = catalog.publications[index];
+                              final isDisponible = book.estado.toUpperCase().trim() == 'DISPONIBLE';
                               return _BookGridCard(
                                 book: book,
                                 currencyFormatter: currencyFormatter,
-                                onTap: () {
-                                  Navigator.push(
+                                isAdmin: isAdmin,
+                                onDelete: (isAdmin && isDisponible)
+                                    ? () => _confirmDeleteBook(context, book)
+                                    : null,
+                                onTap: () async {
+                                  final deleted = await Navigator.push<bool>(
                                     context,
                                     MaterialPageRoute(
                                       builder: (_) => BookDetailScreen(bookId: book.id),
                                     ),
                                   );
+                                  if (deleted == true && context.mounted) {
+                                    context.read<CatalogProvider>().removeLocalPublication(book.id);
+                                  }
                                 },
                               );
                             },
@@ -336,11 +429,15 @@ class _BookGridCard extends StatelessWidget {
   final PublicacionModel book;
   final NumberFormat currencyFormatter;
   final VoidCallback onTap;
+  final bool isAdmin;
+  final VoidCallback? onDelete;
 
   const _BookGridCard({
     required this.book,
     required this.currencyFormatter,
     required this.onTap,
+    this.isAdmin = false,
+    this.onDelete,
   });
 
   @override
@@ -398,6 +495,40 @@ class _BookGridCard extends StatelessWidget {
                       ),
                     ),
                   ),
+                  if (isAdmin && onDelete != null)
+                    Positioned(
+                      top: 6,
+                      right: 6,
+                      child: Tooltip(
+                        message: 'Eliminar libro (Admin)',
+                        child: Material(
+                          color: Colors.transparent,
+                          child: InkWell(
+                            onTap: onDelete,
+                            borderRadius: BorderRadius.circular(20),
+                            child: Container(
+                              padding: const EdgeInsets.all(6),
+                              decoration: BoxDecoration(
+                                color: Colors.red.shade700,
+                                shape: BoxShape.circle,
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: Colors.black.withOpacity(0.3),
+                                    blurRadius: 4,
+                                    offset: const Offset(0, 2),
+                                  ),
+                                ],
+                              ),
+                              child: const Icon(
+                                Icons.delete_forever_rounded,
+                                color: Colors.white,
+                                size: 16,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
                 ],
               ),
             ),

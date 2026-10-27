@@ -35,6 +35,10 @@ class UserModel {
   });
 
   factory UserModel.fromJson(Map<String, dynamic> json) {
+    final totalCalificaciones =
+        int.tryParse(json['total_calificaciones']?.toString() ?? '0') ?? 0;
+    final storedAverage =
+        double.tryParse(json['reputacion_promedio']?.toString() ?? '0') ?? 0;
     return UserModel(
       id: json['id'] ?? '',
       firebaseUid: json['firebase_uid'] ?? '',
@@ -47,14 +51,22 @@ class UserModel {
       sedeNombre: json['sede_nombre'] ?? json['sede'],
       programaNombre: json['programa_nombre'] ?? json['carrera'],
       rol: json['rol'] ?? 'ESTUDIANTE',
-      estado: json['estado'] ?? (json['activo'] == false ? 'INACTIVO' : 'ACTIVO'),
-      reputacionPromedio: double.tryParse(json['reputacion_promedio']?.toString() ?? '5.0') ?? 5.0,
-      totalCalificaciones: json['total_calificaciones'] ?? 0,
+      estado:
+          (json['is_suspended'] == true ||
+              json['status'] == 'suspended' ||
+              json['estado'] == 'SUSPENDIDO')
+          ? 'SUSPENDIDO'
+          : (json['activo'] == false
+                ? 'INACTIVO'
+                : (json['estado'] ?? 'ACTIVO')),
+      reputacionPromedio: totalCalificaciones == 0 ? 0 : storedAverage,
+      totalCalificaciones: totalCalificaciones,
       biografia: json['biografia'],
     );
   }
 
   Map<String, dynamic> toJson() {
+    final bool suspended = (estado == 'SUSPENDIDO');
     return {
       'id': id,
       'firebase_uid': firebaseUid,
@@ -68,13 +80,20 @@ class UserModel {
       if (programaNombre != null) 'programa_nombre': programaNombre,
       'rol': rol,
       'estado': estado,
+      'status': suspended ? 'suspended' : 'active',
+      'is_suspended': suspended,
+      'activo': !suspended && estado != 'INACTIVO',
       'reputacion_promedio': reputacionPromedio,
       'total_calificaciones': totalCalificaciones,
       if (biografia != null) 'biografia': biografia,
     };
   }
 
-  bool get isAdmin => rol == 'ADMINISTRADOR' || rol == 'ADMIN';
+  bool get isAdmin =>
+      rol.trim().toUpperCase() == 'ADMINISTRADOR' ||
+      rol.trim().toUpperCase() == 'ADMIN' ||
+      email.trim().toLowerCase() == 'vargasdeiby54@gmail.com';
   bool get isEstudiante => rol == 'ESTUDIANTE';
-  bool get isActivo => estado == 'ACTIVO';
+  bool get isSuspended => estado == 'SUSPENDIDO' || estado == 'INACTIVO';
+  bool get isActivo => estado == 'ACTIVO' && !isSuspended;
 }

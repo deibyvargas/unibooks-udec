@@ -17,8 +17,10 @@ class TransaccionModel {
   final String? observacionesEntrega;
   final PuntoEncuentroModel? puntoEncuentro;
   final PublicacionModel? publicacion;
+  final PublicacionModel? publicacionOfrecida;
   final UserModel? vendedor;
   final UserModel? comprador;
+  final Map<String, dynamic> evaluaciones;
 
   TransaccionModel({
     required this.id,
@@ -35,8 +37,10 @@ class TransaccionModel {
     this.observacionesEntrega,
     this.puntoEncuentro,
     this.publicacion,
+    this.publicacionOfrecida,
     this.vendedor,
     this.comprador,
+    this.evaluaciones = const {},
   });
 
   factory TransaccionModel.fromJson(Map<String, dynamic> json) {
@@ -61,8 +65,25 @@ class TransaccionModel {
       publicacion: json['publicacion'] != null
           ? PublicacionModel.fromJson(json['publicacion'])
           : null,
-      vendedor: json['vendedor'] != null ? UserModel.fromJson(json['vendedor']) : null,
-      comprador: json['comprador'] != null ? UserModel.fromJson(json['comprador']) : null,
+      publicacionOfrecida: json['publicacion_ofrecida'] != null
+          ? PublicacionModel.fromJson(json['publicacion_ofrecida'])
+          : null,
+      vendedor: json['vendedor'] != null
+          ? UserModel.fromJson(json['vendedor'])
+          : null,
+      comprador: json['comprador'] != null
+          ? UserModel.fromJson(json['comprador'])
+          : null,
+      evaluaciones: Map<String, dynamic>.fromEntries(
+        json.entries
+            .where((entry) => entry.key.startsWith('evaluacion_'))
+            .map(
+              (entry) => MapEntry(
+                entry.key.substring('evaluacion_'.length),
+                entry.value,
+              ),
+            ),
+      ),
     );
   }
 
