@@ -68,8 +68,7 @@ class ProfileScreen extends StatelessWidget {
                 const SizedBox(height: 14),
 
                 // Badge y Acceso Administrativo (RBAC)
-                if (user.isAdmin &&
-                    MediaQuery.sizeOf(context).width >= 800) ...[
+                if (user.isAdmin) ...[
                   Container(
                     margin: const EdgeInsets.only(bottom: 14),
                     padding: const EdgeInsets.all(14),
@@ -81,37 +80,46 @@ class ProfileScreen extends StatelessWidget {
                         width: 1.5,
                       ),
                     ),
-                    child: Row(
-                      children: [
-                        const Icon(
-                          Icons.security_rounded,
-                          color: Colors.amber,
-                          size: 32,
-                        ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: const [
-                              Text(
-                                'Privilegios de Administrador (RBAC)',
-                                style: TextStyle(
-                                  fontWeight: FontWeight.bold,
-                                  fontSize: 13,
-                                  color: Colors.black87,
-                                ),
+                    child: LayoutBuilder(
+                      builder: (context, constraints) {
+                        final isMobile = constraints.maxWidth < 480;
+                        final details = Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Icon(
+                              Icons.security_rounded,
+                              color: Colors.amber,
+                              size: 32,
+                            ),
+                            const SizedBox(width: 12),
+                            const Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    'Privilegios de Administrador (RBAC)',
+                                    softWrap: true,
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 13,
+                                      color: Colors.black87,
+                                    ),
+                                  ),
+                                  SizedBox(height: 3),
+                                  Text(
+                                    'Auditoría, métricas y moderación global de usuarios.',
+                                    softWrap: true,
+                                    style: TextStyle(
+                                      fontSize: 11,
+                                      color: Colors.black54,
+                                    ),
+                                  ),
+                                ],
                               ),
-                              Text(
-                                'Auditoría, métricas y moderación global de usuarios.',
-                                style: TextStyle(
-                                  fontSize: 11,
-                                  color: Colors.black54,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                        ElevatedButton.icon(
+                            ),
+                          ],
+                        );
+                        final button = ElevatedButton.icon(
                           style: ElevatedButton.styleFrom(
                             backgroundColor: Colors.amber.shade700,
                             foregroundColor: Colors.white,
@@ -136,8 +144,29 @@ class ProfileScreen extends StatelessWidget {
                               ),
                             );
                           },
-                        ),
-                      ],
+                        );
+
+                        return isMobile
+                            ? Column(
+                                crossAxisAlignment: CrossAxisAlignment.stretch,
+                                children: [
+                                  details,
+                                  const SizedBox(height: 12),
+                                  Align(
+                                    alignment: Alignment.centerLeft,
+                                    child: button,
+                                  ),
+                                ],
+                              )
+                            : Row(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Expanded(child: details),
+                                  const SizedBox(width: 12),
+                                  button,
+                                ],
+                              );
+                      },
                     ),
                   ),
                 ],
