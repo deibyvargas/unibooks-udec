@@ -5,6 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session, joinedload
 from app.api.deps import get_db, get_current_user
 from app.models.entities import Transaccion, Publicacion, PuntoEncuentro, Usuario, Notificacion, SolicitudIntercambio, EvaluacionEntrega
+from app.core.concurrency import lock_row, compare_and_set, commit_or_conflict, raise_conflict
 from app.schemas.schemas import TransaccionCreate, TransaccionConfirmacionEntrega, TransaccionOut, TransaccionRespuesta, EvaluacionEntregaOut
 
 router = APIRouter(prefix="/transacciones", tags=["Módulo de Reserva, Compra y Punto de Encuentro"])
@@ -32,7 +33,9 @@ def reservar_libro(
     Inicia el proceso de compra, donación o entrega de trueque en un punto físico seguro de la UDEC.
     Genera un PIN de seguridad antifraude de 4 dígitos para el solicitante.
     """
-    publicacion = db.query(Publicacion).filter(Publicacion.id == transaccion_in.publicacion_id).first()
+    # Bloqueo pesimista (SELECT ... FOR UPDATE): serializa las reservas
+    # concurrentes sobre el mismo libro hasta el COMMIT de esta transacción.
+    publicacion = lock_row(db.query(Publicacion).filter(Publicacion.id == transaccion_in.publicacion_id))
     if not publicacion:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Publicación no encontrada")
 
@@ -41,6 +44,15 @@ def reservar_libro(
 
     if publicacion.estado != "DISPONIBLE":
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"El libro ya se encuentra en estado '{publicacion.estado}'")
+
+    # Evita reservas duplicadas del mismo estudiante (doble clic / reintentos simultáneos)
+    reserva_activa = db.query(Transaccion.id).filter(
+        Transaccion.publicacion_id == publicacion.id,
+        Transaccion.comprador_id == current_user.id,
+        Transaccion.estado.in_(("SOLICITUD_PENDIENTE", "PENDIENTE_ENCUENTRO")),
+    ).first()
+    if reserva_activa:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Ya tienes una solicitud activa para este libro")
 
     punto = db.query(PuntoEncuentro).filter(PuntoEncuentro.id == transaccion_in.punto_encuentro_id).first()
     if not punto:
@@ -72,7 +84,7 @@ def reservar_libro(
         tipo_referencia="transacciones"
     )
     db.add(notif)
-    db.commit()
+    commit_or_conflict(db, "No fue posible registrar la reserva por un conflicto concurrente")
     db.refresh(nueva_transaccion)
 
     return nueva_transaccion
@@ -85,7 +97,7 @@ def responder_solicitud_adquisicion(
     current_user: Usuario = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    transaccion = db.query(Transaccion).filter(Transaccion.id == transaccion_id).first()
+    transaccion = lock_row(db.query(Transaccion).filter(Transaccion.id == transaccion_id))
     if not transaccion:
         raise HTTPException(status_code=404, detail="Solicitud no encontrada")
     if transaccion.vendedor_id != current_user.id:
@@ -94,12 +106,15 @@ def responder_solicitud_adquisicion(
         raise HTTPException(status_code=409, detail="La solicitud ya fue respondida")
 
     if respuesta.aceptar:
-        transaccion.estado = "PENDIENTE_ENCUENTRO"
-        transaccion.codigo_verificacion_entrega = generate_pin()
+        nuevos_valores = {"estado": "PENDIENTE_ENCUENTRO", "codigo_verificacion_entrega": generate_pin()}
         mensaje = "Tu solicitud fue aceptada. Ya puedes consultar tu PIN de entrega."
     else:
-        transaccion.estado = "CANCELADA"
+        nuevos_valores = {"estado": "CANCELADA"}
         mensaje = "Tu solicitud fue rechazada. El libro continúa disponible."
+
+    # Transición de estado condicional: solo una respuesta concurrente gana.
+    if not compare_and_set(db, Transaccion, transaccion.id, {"estado": "SOLICITUD_PENDIENTE"}, nuevos_valores):
+        raise_conflict(db, "La solicitud ya fue respondida")
 
     db.add(Notificacion(
         usuario_id=transaccion.comprador_id,
@@ -109,7 +124,7 @@ def responder_solicitud_adquisicion(
         referencia_id=transaccion.id,
         tipo_referencia="transacciones",
     ))
-    db.commit()
+    commit_or_conflict(db)
     db.refresh(transaccion)
     return transaccion
 
@@ -177,7 +192,7 @@ def confirmar_entrega(
     Solo el entregador (dueño del libro) puede ingresar el PIN y confirmar la entrega.
     Al confirmar, se marca como COMPLETADA, el libro como NO_DISPONIBLE y se notifica a ambos.
     """
-    transaccion = db.query(Transaccion).filter(Transaccion.id == transaccion_id).first()
+    transaccion = lock_row(db.query(Transaccion).filter(Transaccion.id == transaccion_id))
     if not transaccion:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Transacción no encontrada")
 
@@ -205,15 +220,25 @@ def confirmar_entrega(
             detail="PIN incorrecto, verifica con el solicitante"
         )
 
-    # Registrar confirmación
-    transaccion.confirmado_vendedor = True
-    transaccion.confirmado_comprador = True
-    transaccion.estado = "COMPLETADA"
-    transaccion.fecha_completada = datetime.now(timezone.utc)
-    transaccion.observaciones_entrega = confirmacion.observaciones
+    # Registrar confirmación con transición atómica PENDIENTE_ENCUENTRO -> COMPLETADA.
+    # Si dos confirmaciones llegan a la vez, solo una se aplica.
+    completada = compare_and_set(
+        db, Transaccion, transaccion.id,
+        expected={"estado": "PENDIENTE_ENCUENTRO"},
+        values={
+            "confirmado_vendedor": True,
+            "confirmado_comprador": True,
+            "estado": "COMPLETADA",
+            "fecha_completada": datetime.now(timezone.utc),
+            "observaciones_entrega": confirmacion.observaciones,
+        },
+    )
+    if not completada:
+        raise_conflict(db, "La transacción ya fue confirmada por otra petición")
+    db.refresh(transaccion)
 
     # Actualizar estado final del libro a "NO_DISPONIBLE" para darlo de baja del catálogo
-    publicacion = db.query(Publicacion).filter(Publicacion.id == transaccion.publicacion_id).first()
+    publicacion = lock_row(db.query(Publicacion).filter(Publicacion.id == transaccion.publicacion_id))
     if publicacion:
         publicacion.estado = "NO_DISPONIBLE"
         db.query(Transaccion).filter(
@@ -256,7 +281,7 @@ def confirmar_entrega(
     )
     db.add(notif_vendedor)
     db.add(notif_comprador)
-    db.commit()
+    commit_or_conflict(db)
     db.refresh(transaccion)
 
     return transaccion

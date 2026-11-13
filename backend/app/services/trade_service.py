@@ -3,6 +3,7 @@ from datetime import datetime, timezone
 from sqlalchemy.orm import Session, joinedload
 from fastapi import HTTPException, status
 from app.models.entities import SolicitudIntercambio, Publicacion, Usuario, Notificacion
+from app.core.concurrency import lock_row, compare_and_set, commit_or_conflict, raise_conflict
 from app.schemas.schemas import SolicitudIntercambioCreate, SolicitudIntercambioRespuesta
 
 class TradeService:
@@ -52,7 +53,7 @@ class TradeService:
             tipo_referencia="solicitudes_intercambio"
         )
         db.add(notif)
-        db.commit()
+        commit_or_conflict(db)
         db.refresh(nueva_solicitud)
         return nueva_solicitud
 
@@ -82,7 +83,7 @@ class TradeService:
         respuesta: SolicitudIntercambioRespuesta,
         current_user: Usuario
     ) -> SolicitudIntercambio:
-        solicitud = db.query(SolicitudIntercambio).filter(SolicitudIntercambio.id == solicitud_id).first()
+        solicitud = lock_row(db.query(SolicitudIntercambio).filter(SolicitudIntercambio.id == solicitud_id))
         if not solicitud:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Propuesta no encontrada")
 
@@ -92,9 +93,9 @@ class TradeService:
         if solicitud.estado != "PENDIENTE":
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"La propuesta ya fue respondida con estado {solicitud.estado}")
 
-        solicitud.fecha_respuesta = datetime.now(timezone.utc)
+        valores = {"fecha_respuesta": datetime.now(timezone.utc)}
         if respuesta.aceptar:
-            solicitud.estado = "ACEPTADA"
+            valores["estado"] = "ACEPTADA"
             notif = Notificacion(
                 usuario_id=solicitud.usuario_solicitante_id,
                 tipo="RESPUESTA_INTERCAMBIO",
@@ -104,8 +105,8 @@ class TradeService:
                 tipo_referencia="solicitudes_intercambio"
             )
         else:
-            solicitud.estado = "RECHAZADA"
-            solicitud.motivo_rechazo = respuesta.motivo_rechazo
+            valores["estado"] = "RECHAZADA"
+            valores["motivo_rechazo"] = respuesta.motivo_rechazo
             notif = Notificacion(
                 usuario_id=solicitud.usuario_solicitante_id,
                 tipo="RESPUESTA_INTERCAMBIO",
@@ -115,7 +116,11 @@ class TradeService:
                 tipo_referencia="solicitudes_intercambio"
             )
 
+        # Transición condicional PENDIENTE -> ACEPTADA/RECHAZADA (una sola respuesta gana)
+        if not compare_and_set(db, SolicitudIntercambio, solicitud.id, {"estado": "PENDIENTE"}, valores):
+            raise_conflict(db, "La propuesta ya fue respondida por otra petición")
+
         db.add(notif)
-        db.commit()
+        commit_or_conflict(db)
         db.refresh(solicitud)
         return solicitud

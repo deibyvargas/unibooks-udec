@@ -1,12 +1,59 @@
+import logging
+from sqlalchemy import text
 from sqlalchemy.orm import Session
 from app.core.database import engine, Base
 from app.models.entities import (
     Sede, Facultad, ProgramaAcademico, PuntoEncuentro, Usuario,
 )
 
+logger = logging.getLogger("unibooks.db")
+
+# ---------------------------------------------------------------------------
+# INDEXACIÓN AVANZADA
+# Índices compuestos y parciales diseñados a partir de las consultas reales
+# de la aplicación (ver docs/bases_de_datos_avanzadas.md y
+# scripts/benchmark_queries.py). Compatibles con PostgreSQL y SQLite.
+# ---------------------------------------------------------------------------
+PERFORMANCE_INDEXES = [
+    # Catálogo: WHERE estado='DISPONIBLE' [AND sede_id=?] ORDER BY created_at DESC
+    "CREATE INDEX IF NOT EXISTS idx_pub_estado_sede_fecha ON publicaciones (estado, sede_id, created_at)",
+    # Catálogo ordenado por precio
+    "CREATE INDEX IF NOT EXISTS idx_pub_estado_precio ON publicaciones (estado, precio)",
+    # Índice PARCIAL: solo indexa los libros disponibles (más pequeño y rápido)
+    "CREATE INDEX IF NOT EXISTS idx_pub_disponibles_fecha ON publicaciones (created_at) WHERE estado = 'DISPONIBLE'",
+    # "Mis publicaciones" ordenadas por fecha
+    "CREATE INDEX IF NOT EXISTS idx_pub_usuario_fecha ON publicaciones (usuario_id, created_at)",
+    # Reservas activas por libro (control de duplicados y cancelación masiva)
+    "CREATE INDEX IF NOT EXISTS idx_tx_publicacion_estado ON transacciones (publicacion_id, estado)",
+    # "Mis transacciones" como comprador / vendedor ordenadas por fecha
+    "CREATE INDEX IF NOT EXISTS idx_tx_comprador_fecha ON transacciones (comprador_id, created_at)",
+    "CREATE INDEX IF NOT EXISTS idx_tx_vendedor_fecha ON transacciones (vendedor_id, created_at)",
+    # Bandeja de intercambios recibidos / enviados
+    "CREATE INDEX IF NOT EXISTS idx_sol_receptor_fecha ON solicitudes_intercambio (usuario_receptor_id, created_at)",
+    "CREATE INDEX IF NOT EXISTS idx_sol_solicitante_fecha ON solicitudes_intercambio (usuario_solicitante_id, created_at)",
+    # Notificaciones no leídas del usuario
+    "CREATE INDEX IF NOT EXISTS idx_notif_usuario_leida_fecha ON notificaciones (usuario_id, leida, created_at)",
+    # Historial de un chat en orden cronológico
+    "CREATE INDEX IF NOT EXISTS idx_msg_conversacion_fecha ON mensajes (conversacion_id, created_at)",
+    # Reputación: calificaciones recibidas por usuario
+    "CREATE INDEX IF NOT EXISTS idx_calif_evaluado ON calificaciones (evaluado_id)",
+]
+
+
+def ensure_performance_indexes() -> None:
+    """Crea los índices de rendimiento si no existen (idempotente, no destructivo)."""
+    for ddl in PERFORMANCE_INDEXES:
+        try:
+            with engine.begin() as conn:
+                conn.execute(text(ddl))
+        except Exception as exc:  # Un índice fallido nunca debe impedir el arranque
+            logger.warning("No se pudo crear índice (%s): %s", ddl, exc)
+
+
 def init_database():
     """Crea las tablas en la base de datos si no existen."""
     Base.metadata.create_all(bind=engine)
+    ensure_performance_indexes()
     # Corrige perfiles creados con el antiguo valor ficticio de 5 estrellas.
     with Session(bind=engine) as db:
         db.query(Usuario).filter(

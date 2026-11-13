@@ -37,3 +37,7 @@ frontend/.pub/
 *.log
 .DS_Store
 Thumbs.db
+
+# Archivos auxiliares de SQLite en modo WAL
+*.db-wal
+*.db-shm

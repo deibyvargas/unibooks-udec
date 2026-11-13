@@ -7,7 +7,8 @@ from app.api.v1 import (
     transactions,
     ratings,
     chats,
-    notifications
+    notifications,
+    db_admin,
 )
 
 api_router = APIRouter()
@@ -20,3 +21,4 @@ api_router.include_router(transactions.router)
 api_router.include_router(ratings.router)
 api_router.include_router(chats.router)
 api_router.include_router(notifications.router)
+api_router.include_router(db_admin.router)

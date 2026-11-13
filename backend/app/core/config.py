@@ -11,6 +11,9 @@ class Settings(BaseSettings):
 
     # Database
     DATABASE_URL: str = "sqlite:///./unibooks_dev.db"
+    DB_POOL_SIZE: int = 10        # Conexiones persistentes del pool (PostgreSQL)
+    DB_MAX_OVERFLOW: int = 20     # Conexiones extra en picos de concurrencia
+    SLOW_QUERY_MS: float = 200.0  # Umbral para registrar consultas lentas
 
     # Firebase
     FIREBASE_CREDENTIALS_PATH: str = ""

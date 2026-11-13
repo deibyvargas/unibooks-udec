@@ -4,6 +4,7 @@ from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import func
 from fastapi import HTTPException, status
 from app.models.entities import Calificacion, Transaccion, Usuario, Notificacion, EvaluacionEntrega
+from app.core.concurrency import commit_or_conflict
 from app.schemas.schemas import CalificacionCreate
 
 class RatingService:
@@ -60,8 +61,12 @@ class RatingService:
             evaluacion.calificacion_id = nueva_calificacion.id
 
         # Recalcular reputación atómicamente
-        avg_score = db.query(func.avg(Calificacion.puntuacion)).filter(Calificacion.evaluado_id == evaluado_id).scalar()
-        total_reviews = db.query(func.count(Calificacion.id)).filter(Calificacion.evaluado_id == evaluado_id).scalar()
+        # Optimización: una sola consulta con ambas agregaciones (antes eran dos
+        # recorridos de la tabla calificaciones). Usa el índice idx_calif_evaluado.
+        avg_score, total_reviews = db.query(
+            func.avg(Calificacion.puntuacion),
+            func.count(Calificacion.id),
+        ).filter(Calificacion.evaluado_id == evaluado_id).one()
 
         usuario_evaluado = db.query(Usuario).filter(Usuario.id == evaluado_id).first()
         if usuario_evaluado:
@@ -79,7 +84,9 @@ class RatingService:
             tipo_referencia="calificaciones"
         )
         db.add(notif)
-        db.commit()
+        # La restricción UNIQUE(transaccion_id, evaluador_id) protege contra
+        # dos calificaciones simultáneas: la segunda recibe HTTP 409.
+        commit_or_conflict(db, "Ya has calificado esta transacción")
         db.refresh(nueva_calificacion)
         return nueva_calificacion
 

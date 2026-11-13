@@ -412,3 +412,22 @@ CREATE INDEX IF NOT EXISTS idx_mensajes_conversacion ON mensajes(conversacion_id
 CREATE INDEX IF NOT EXISTS idx_mensajes_created_at ON mensajes(created_at ASC);
 
 CREATE INDEX IF NOT EXISTS idx_notificaciones_usuario ON notificaciones(usuario_id, leida);
+
+-- 15. INDEXACIÓN AVANZADA: ÍNDICES COMPUESTOS Y PARCIALES
+-- Diseñados según los filtros + ordenamientos reales de la API. El orden de las
+-- columnas sigue la regla "igualdad primero, rango/orden al final", lo que
+-- permite al motor resolver WHERE y ORDER BY con el mismo índice (sin sort).
+-- Medición: backend/scripts/benchmark_queries.py -> docs/resultados_benchmark.md
+CREATE INDEX IF NOT EXISTS idx_pub_estado_sede_fecha ON publicaciones (estado, sede_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_pub_estado_precio ON publicaciones (estado, precio);
+CREATE INDEX IF NOT EXISTS idx_pub_disponibles_fecha ON publicaciones (created_at) WHERE estado = 'DISPONIBLE';
+CREATE INDEX IF NOT EXISTS idx_pub_usuario_fecha ON publicaciones (usuario_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_tx_publicacion_estado ON transacciones (publicacion_id, estado);
+CREATE INDEX IF NOT EXISTS idx_tx_comprador_fecha ON transacciones (comprador_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_tx_vendedor_fecha ON transacciones (vendedor_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_sol_receptor_fecha ON solicitudes_intercambio (usuario_receptor_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_sol_solicitante_fecha ON solicitudes_intercambio (usuario_solicitante_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_notif_usuario_leida_fecha ON notificaciones (usuario_id, leida, created_at);
+CREATE INDEX IF NOT EXISTS idx_msg_conversacion_fecha ON mensajes (conversacion_id, created_at);
+-- Búsqueda insensible a mayúsculas en título (soporta ILIKE 'prefijo%')
+CREATE INDEX IF NOT EXISTS idx_pub_titulo_lower ON publicaciones (LOWER(titulo) text_pattern_ops);

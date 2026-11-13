@@ -1,3 +1,4 @@
+from sqlalchemy.exc import IntegrityError
 import os
 import uuid
 import shutil
@@ -110,8 +111,16 @@ def iniciar_conversacion(
             ultimo_mensaje_texto="Conversación iniciada"
         )
         db.add(conversacion)
-        db.commit()
-        db.refresh(conversacion)
+        try:
+            db.commit()
+        except IntegrityError:
+            # Otra petición simultánea creó la misma conversación (UNIQUE): se reutiliza.
+            db.rollback()
+            conversacion = query.first()
+            if not conversacion:
+                raise
+        else:
+            db.refresh(conversacion)
 
     # Recargar con relaciones
     conversacion = db.query(Conversacion).options(

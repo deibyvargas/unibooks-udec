@@ -12,6 +12,7 @@ from app.models.entities import (
     Calificacion,
 )
 from app.schemas.schemas import PublicacionCreate, PublicacionUpdate
+from app.core.concurrency import atomic_increment
 
 class PublicationService:
     @staticmethod
@@ -113,8 +114,9 @@ class PublicationService:
                 detail="Publicación de libro no encontrada"
             )
 
-        # Incrementar contador de visualizaciones
-        publicacion.vistas += 1
+        # Incrementar contador de visualizaciones de forma atómica
+        # (UPDATE ... SET vistas = vistas + 1) para no perder visitas concurrentes.
+        atomic_increment(db, Publicacion, publicacion.id, "vistas")
         db.commit()
         db.refresh(publicacion)
         return publicacion
